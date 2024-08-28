@@ -40,17 +40,28 @@ contract BaseSAFEV0 is ERC1155 {
     ISections immutable _section5;
 
     mapping(uint256 safeHashId => SAFE) public safes;
-
     string public constant name = "Base Safe V0";
     string public constant symbol = "BSAFE";
 
-    constructor(ISections section2, ISections section3, ISections section4, ISections section5) {
+    constructor(ISections section2, ISections section3, ISections section4, ISections section5)
+        payable
+    {
         (_section2, _section3, _section4, _section5) = (section2, section3, section4, section5);
         SafeTransferLib.safeApprove(USDC, address(IE), type(uint256).max);
     }
 
-    function uri(uint256 safeHashId) public view override returns (string memory) {
+    function uri(uint256 safeHashId) public view override(ERC1155) returns (string memory) {
         return _createURI(safes[safeHashId]);
+    }
+
+    function draft(SAFE memory safe) public view returns (string memory) {
+        if (safe.investorSignature != address(0)) safe.investorSignature = address(0);
+        return _createURI(safe);
+    }
+
+    function getHashId(SAFE memory safe) public pure returns (uint256) {
+        if (safe.investorSignature != address(0)) safe.investorSignature = address(0);
+        return uint256(keccak256(abi.encode(safe)));
     }
 
     error Registered();
@@ -65,6 +76,7 @@ contract BaseSAFEV0 is ERC1155 {
         string memory baseName = IE.whatIsTheNameOf(msg.sender);
         if (bytes(baseName).length != 0) safe.companyName = baseName;
         else safe.companyName = LibString.toHexStringChecksummed(msg.sender);
+
         safe.investorName = investorName;
         safe.purchaseAmount = purchaseAmount;
         safe.postMoneyValuationCap = postMoneyValuationCap;
@@ -123,7 +135,7 @@ contract BaseSAFEV0 is ERC1155 {
         SAFE storage safe = safes[safeHashId];
 
         if (safe.companySignature == address(0)) revert Unregistered();
-        if (safe.investorSignature == msg.sender) revert Registered();
+        if (safe.investorSignature != address(0)) revert Registered();
 
         if (bytes(safe.investorName).length == 42) {
             if (msg.sender != _toAddress(bytes(safe.investorName))) revert Unauthorized();
@@ -162,10 +174,8 @@ contract BaseSAFEV0 is ERC1155 {
             )
         );
 
-        if (SafeTransferLib.balanceOf(USDC, address(this)) != 0) {
-            SafeTransferLib.safeTransfer(
-                USDC, msg.sender, SafeTransferLib.balanceOf(USDC, address(this))
-            );
+        if ( /*recycle*/ (safeHashId = SafeTransferLib.balanceOf(USDC, address(this))) != 0) {
+            SafeTransferLib.safeTransfer(USDC, msg.sender, safeHashId);
         }
     }
 
