@@ -12,7 +12,7 @@ import {LibString} from "@solady/src/utils/LibString.sol";
 
 import "../lib/forge-std/src/console.sol";
 
-contract TesterTest is Test {
+contract BaseSAFEV0Test is Test {
     BaseSAFEV0 bsafe;
     ISections section2;
     ISections section3;

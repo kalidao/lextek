@@ -45,11 +45,7 @@ contract BaseSAFEV0 is ERC1155 {
     string public constant symbol = "BSAFE";
 
     constructor(ISections section2, ISections section3, ISections section4, ISections section5) {
-        _section2 = section2;
-        _section3 = section3;
-        _section4 = section4;
-        _section5 = section5;
-
+        (_section2, _section3, _section4, _section5) = (section2, section3, section4, section5);
         SafeTransferLib.safeApprove(USDC, address(IE), type(uint256).max);
     }
 
@@ -180,7 +176,7 @@ contract BaseSAFEV0 is ERC1155 {
             uint256 len = s.length;
             bool hasDecimal;
             uint256 decimalPlaces;
-            for (uint256 i; i < len; ++i) {
+            for (uint256 i; i != len; ++i) {
                 bytes1 c = s[i];
                 if (c >= 0x30 && c <= 0x39) {
                     result = result * 10 + uint8(c) - 48;
@@ -229,7 +225,7 @@ contract BaseSAFEV0 is ERC1155 {
                     bytes(
                         abi.encodePacked(
                             '{"name":"',
-                            LibString.concat(unicode"📜", " Base SAFE V0"),
+                            "Base SAFE V0",
                             '","description":"Onchain Y Combinator SAFE"',
                             ',"image":"',
                             _render(safe),
