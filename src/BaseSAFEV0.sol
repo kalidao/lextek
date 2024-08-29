@@ -57,12 +57,12 @@ contract BaseSAFEV0 is ERC1155 {
     }
 
     function draft(SAFE memory safe) public view returns (string memory) {
-        if (safe.investorSignature != address(0)) safe.investorSignature = address(0);
+        if (safe.investorSignature != address(0)) delete safe.investorSignature;
         return _createURI(safe);
     }
 
     function getHashId(SAFE memory safe) public pure returns (uint256) {
-        if (safe.investorSignature != address(0)) safe.investorSignature = address(0);
+        if (safe.investorSignature != address(0)) delete safe.investorSignature;
         return uint256(keccak256(abi.encode(safe)));
     }
 
