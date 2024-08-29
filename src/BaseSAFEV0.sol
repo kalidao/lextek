@@ -42,6 +42,7 @@ contract BaseSAFEV0 is ERC1155 {
     mapping(uint256 safeHashId => SAFE) public safes;
     string public constant name = "Base Safe V0";
     string public constant symbol = "BSAFE";
+    mapping(address party => uint256[]) ids;
 
     constructor(ISections section2, ISections section3, ISections section4, ISections section5)
         payable
@@ -62,6 +63,10 @@ contract BaseSAFEV0 is ERC1155 {
     function getHashId(SAFE memory safe) public pure returns (uint256) {
         if (safe.investorSignature != address(0)) safe.investorSignature = address(0);
         return uint256(keccak256(abi.encode(safe)));
+    }
+
+    function getHashIds(address party) public view returns (uint256[] memory) {
+        return ids[party];
     }
 
     error Registered();
@@ -109,6 +114,8 @@ contract BaseSAFEV0 is ERC1155 {
         if (ens) shortName = _extractName(bytes(safe.investorName));
         (, address investorAddress,) = IE.whatIsTheAddressOf(ens ? shortName : safe.investorName);
         _mint(investorAddress, safeHashId, 1, "");
+        ids[investorAddress].push(safeHashId);
+        ids[msg.sender].push(safeHashId);
     }
 
     error InvalidSyntax();
@@ -254,7 +261,7 @@ contract BaseSAFEV0 is ERC1155 {
                 Base64.encode(
                     bytes(
                         abi.encodePacked(
-                            '<svg width="800" height="3900" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">',
+                            '<svg width="800" height="4200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">',
                             "<style>",
                             '.legal-text { font-family: "Times New Roman", Times, serif; font-size: 12px; text-align: justify; line-height: 1.5; }',
                             ".title { font-size: 16px; font-weight: bold; text-align: center; }",
@@ -287,6 +294,7 @@ contract BaseSAFEV0 is ERC1155 {
                 _section3.section3(),
                 _section4.section4(),
                 _section5.section5(),
+                '<p class="legal-text"> IN WITNESS WHEREOF, the undersigned have caused this Safe to be duly executed and delivered.</p>'
                 '<p class="legal-text">',
                 safe.companyName,
                 "</p>",
@@ -318,11 +326,11 @@ contract BaseSAFEV0 is ERC1155 {
                 safe.investorName,
                 ' (the "Investor") of $',
                 safe.purchaseAmount,
-                ' (the "Purchase Amount") on or about ',
+                'USDC digital stablecoin (the "Purchase Amount") on or about ',
                 safe.safeDate,
                 ", ",
                 safe.companyName,
-                ', a Delaware corporation (the "Company"), issues to the Investor the right to certain shares of the Company\'s Capital Stock, subject to the terms described below. For the avoidance of doubt, if not otherwise provided by reference to their public key or Ethereum Name Service (ENS) domain, the identity and corporate organization of the parties shall be understood with respect to this document and other evidence provided by the parties in connection with the transactions contemplated hereby.</p>',
+                ', a Delaware corporation (the "Company"), issues to the Investor the right to certain shares of the Company\'s Capital Stock, subject to the terms described below. For the avoidance of doubt, if not otherwise provided by reference to their public key or Ethereum Name Service (ENS) domain, the identity and corporate organization of the parties shall be understood by this document and other evidence provided by the parties in connection with the transactions contemplated hereby.</p>',
                 '<p class="legal-text">The "Post-Money Valuation Cap" is $',
                 safe.postMoneyValuationCap,
                 ". See Section 2 for certain additional defined terms.</p>",
