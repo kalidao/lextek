@@ -43,7 +43,7 @@ contract BaseSAFEV0 is ERC1155 {
     mapping(uint256 safeHashId => SAFE) public safes;
     string public constant name = "Base Safe V0";
     string public constant symbol = "BSAFE";
-    mapping(address party => uint256[]) ids;
+    mapping(address party => uint256[]) _ids;
 
     constructor(ISections section2, ISections section3, ISections section4, ISections section5)
         payable
@@ -67,7 +67,7 @@ contract BaseSAFEV0 is ERC1155 {
     }
 
     function getHashIds(address party) public view returns (uint256[] memory) {
-        return ids[party];
+        return _ids[party];
     }
 
     function checkSignature(address party, uint256 safeHashId, bytes calldata signature)
@@ -124,8 +124,8 @@ contract BaseSAFEV0 is ERC1155 {
         if (ens) shortName = _extractName(bytes(safe.investorName));
         (, address investorAddress,) = IE.whatIsTheAddressOf(ens ? shortName : safe.investorName);
         _mint(investorAddress, safeHashId, 1, "");
-        ids[investorAddress].push(safeHashId);
-        ids[msg.sender].push(safeHashId);
+        _ids[investorAddress].push(safeHashId);
+        _ids[msg.sender].push(safeHashId);
     }
 
     error InvalidSyntax();
