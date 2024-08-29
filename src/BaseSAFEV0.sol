@@ -261,18 +261,16 @@ contract BaseSAFEV0 is ERC1155 {
                 Base64.encode(
                     bytes(
                         abi.encodePacked(
-                            '<svg width="800" height="4200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">',
+                            '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ',
+                            'viewBox="0 0 800 4200" width="100%" height="100%" preserveAspectRatio="xMinYMin meet">',
                             "<style>",
                             '.legal-text { font-family: "Times New Roman", Times, serif; font-size: 12px; text-align: justify; line-height: 1.5; }',
                             ".title { font-size: 16px; font-weight: bold; text-align: center; }",
                             ".section { font-size: 14px; font-weight: bold; }",
-                            ".highlight { background-color: yellow; opacity: 0.5; }",
-                            ".editable { cursor: pointer; }",
-                            ".dropdown { cursor: pointer; }",
-                            ".signature-line { border-bottom: 1px solid black; min-width: 200px; display: inline-block; text-align: center; cursor: pointer; }",
+                            ".signature-line { border-bottom: 1px solid black; min-width: 200px; display: inline-block; text-align: center; }",
                             "</style>",
                             '<rect width="100%" height="100%" fill="white" />',
-                            '<foreignObject x="50" y="30" width="700" height="6700">',
+                            '<foreignObject x="50" y="30" width="700" height="4140">',
                             '<div xmlns="http://www.w3.org/1999/xhtml">',
                             '<p class="title">SAFE (Simple Agreement for Future Equity)</p>',
                             _generateLegalText(safe),
@@ -295,22 +293,24 @@ contract BaseSAFEV0 is ERC1155 {
                 _section4.section4(),
                 _section5.section5(),
                 '<p class="legal-text"> IN WITNESS WHEREOF, the undersigned have caused this Safe to be duly executed and delivered.</p>'
+                '<div class="signature-block">',
                 '<p class="legal-text">',
                 safe.companyName,
                 "</p>",
-                '<p class="legal-text">By: ',
+                '<p class="legal-text">By: <span class="signature-line">',
                 safe.companySignature != address(0)
                     ? LibString.toHexStringChecksummed(safe.companySignature)
-                    : "____________________",
-                "</p>",
+                    : "",
+                "</span></p>",
                 '<p class="legal-text">',
                 safe.investorName,
                 "</p>",
-                '<p class="legal-text">By: ',
+                '<p class="legal-text">By: <span class="signature-line">',
                 safe.investorSignature != address(0)
                     ? LibString.toHexStringChecksummed(safe.investorSignature)
-                    : "____________________",
-                "</p>"
+                    : "",
+                "</span></p>",
+                "</div>"
             )
         );
     }
@@ -326,7 +326,7 @@ contract BaseSAFEV0 is ERC1155 {
                 safe.investorName,
                 ' (the "Investor") of $',
                 safe.purchaseAmount,
-                'USDC digital stablecoin (the "Purchase Amount") on or about ',
+                ' USDC digital stablecoin (the "Purchase Amount") on or about ',
                 safe.safeDate,
                 ", ",
                 safe.companyName,
