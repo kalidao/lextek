@@ -367,4 +367,51 @@ contract BaseSAFEV0 is ERC1155 {
             )
         );
     }
+
+    mapping(uint256 safeHashId => mapping(address party => address to)) validTos;
+
+    function approveTransfer(uint256 safeHashId, address to) public {
+        SAFE storage safe = safes[safeHashId];
+
+        if (msg.sender != safe.companySignature) {
+            if (msg.sender != safe.investorSignature) {
+                revert Unauthorized();
+            }
+        }
+
+        validTos[safeHashId][msg.sender] = to;
+    }
+
+    function safeTransferFrom(
+        address from,
+        address to,
+        uint256 safeHashId,
+        uint256 amount,
+        bytes calldata data
+    ) public override(ERC1155) {
+        SAFE storage safe = safes[safeHashId];
+        if (to == validTos[safeHashId][safe.companySignature]) {
+            if (to == validTos[safeHashId][safe.investorSignature]) {
+                super.safeTransferFrom(from, to, safeHashId, amount, data);
+            }
+        }
+    }
+
+    function safeBatchTransferFrom(
+        address from,
+        address to,
+        uint256[] calldata safeHashIds,
+        uint256[] calldata amounts,
+        bytes calldata data
+    ) public override(ERC1155) {
+        for (uint256 i; i != safeHashIds.length; ++i) {
+            SAFE storage safe = safes[safeHashIds[i]];
+            if (to == validTos[safeHashIds[i]][safe.companySignature]) {
+                if (to != validTos[safeHashIds[i]][safe.investorSignature]) {
+                    revert Unauthorized();
+                }
+            }
+        }
+        super.safeBatchTransferFrom(from, to, safeHashIds, amounts, data);
+    }
 }
