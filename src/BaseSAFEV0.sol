@@ -196,31 +196,34 @@ contract BaseSAFEV0 is ERC1155 {
         }
     }
 
+    error InvalidDecimalPlaces();
     error InvalidCharacter();
+    error NumberTooLarge();
 
     function _toUint(bytes memory s) internal pure returns (uint256 result) {
+        uint256 len = s.length;
+        uint256 decimalPos = type(uint256).max;
+        uint256 digits;
+        uint256 maxDigits = 78;
+        uint256 maxDecimals = 6;
+
         unchecked {
-            uint256 len = s.length;
-            bool hasDecimal;
-            uint256 decimalPlaces;
             for (uint256 i; i != len; ++i) {
                 bytes1 c = s[i];
                 if (c >= 0x30 && c <= 0x39) {
+                    if (digits >= maxDigits) revert NumberTooLarge();
                     result = result * 10 + uint8(c) - 48;
-                    if (hasDecimal) {
-                        if (++decimalPlaces > 6) break;
-                    }
-                } else if (c == 0x2E && !hasDecimal) {
-                    hasDecimal = true;
+                    ++digits;
+                } else if (c == 0x2E && decimalPos == type(uint256).max) {
+                    decimalPos = digits;
                 } else if (c != 0x20) {
                     revert InvalidCharacter();
                 }
             }
-            if (!hasDecimal) {
-                result *= 10 ** 6;
-            } else if (decimalPlaces < 6) {
-                result *= 10 ** (6 - decimalPlaces);
-            }
+
+            uint256 decimals = decimalPos == type(uint256).max ? 0 : digits - decimalPos;
+            if (decimals > maxDecimals) revert InvalidDecimalPlaces();
+            result *= 10 ** (maxDecimals - decimals);
         }
     }
 
