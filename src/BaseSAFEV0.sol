@@ -6,6 +6,7 @@ import {ERC1155} from "@solady/src/tokens/ERC1155.sol";
 import {LibString} from "@solady/src/utils/LibString.sol";
 import {DateTimeLib} from "@solady/src/utils/DateTimeLib.sol";
 import {SafeTransferLib} from "@solady/src/utils/SafeTransferLib.sol";
+import {SignatureCheckerLib} from "@solady/src/utils/SignatureCheckerLib.sol";
 
 struct SAFE {
     string companyName;
@@ -67,6 +68,15 @@ contract BaseSAFEV0 is ERC1155 {
 
     function getHashIds(address party) public view returns (uint256[] memory) {
         return ids[party];
+    }
+
+    function checkSignature(address party, uint256 safeHashId, bytes calldata signature)
+        public
+        view
+        returns (bool)
+    {
+        return
+            SignatureCheckerLib.isValidSignatureNowCalldata(party, bytes32(safeHashId), signature);
     }
 
     error Registered();
@@ -214,7 +224,7 @@ contract BaseSAFEV0 is ERC1155 {
         }
     }
 
-    function _toAddress(bytes memory s) internal pure virtual returns (address addr) {
+    function _toAddress(bytes memory s) internal pure returns (address addr) {
         unchecked {
             uint256 result;
             for (uint256 i = 2; i != 42; ++i) {
