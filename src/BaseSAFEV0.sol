@@ -11,7 +11,7 @@ import {SignatureCheckerLib} from "@solady/src/utils/SignatureCheckerLib.sol";
 struct SAFE {
     string companyName;
     string investorName;
-    string purchaseAmount;
+    string purchaseAmount; /*USDC*/
     string postMoneyValuationCap;
     string safeDate;
     address companySignature;
@@ -33,6 +33,7 @@ interface IIE {
 
 IIE constant IE = IIE(0x1e00cE4800dE0D0000640070006dfc5F93dD0ff9);
 address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+address constant WETH = 0x4200000000000000000000000000000000000006;
 
 contract BaseSAFEV0 is ERC1155 {
     ISections immutable _section2;
@@ -50,6 +51,7 @@ contract BaseSAFEV0 is ERC1155 {
     {
         (_section2, _section3, _section4, _section5) = (section2, section3, section4, section5);
         SafeTransferLib.safeApprove(USDC, address(IE), type(uint256).max);
+        SafeTransferLib.safeApprove(WETH, address(IE), type(uint256).max);
     }
 
     function uri(uint256 safeHashId) public view override(ERC1155) returns (string memory) {
@@ -283,7 +285,7 @@ contract BaseSAFEV0 is ERC1155 {
                 Base64.encode(
                     bytes(
                         abi.encodePacked(
-                            '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ',
+                            '<svg xmlns="http://www.w3.org/2000/svg"',
                             'viewBox="0 0 800 4200" width="100%" height="100%" preserveAspectRatio="xMinYMin meet">',
                             "<style>",
                             '.legal-text { font-family: "Times New Roman", Times, serif; font-size: 12px; text-align: justify; line-height: 1.5; }',
@@ -423,13 +425,13 @@ contract BaseSAFEV0 is ERC1155 {
     }
 
     function burn(address from, uint256 id, uint256 amount) public payable checkVal {
-        _burn(msg.sender, from, id, amount); // Only owner or approved.
+        _burn(msg.sender, from, id, amount); // Only owner or approved. For edits.
     }
 
     error Overflow();
 
     modifier checkVal() {
-        if (msg.value > 0.1 ether) revert Overflow();
+        if (msg.value > 0.01 ether) revert Overflow();
         _;
     }
 
@@ -439,7 +441,13 @@ contract BaseSAFEV0 is ERC1155 {
         );
     }
 
-    function fund(string calldata to, string calldata amount) public payable checkVal {
+    event Log(address indexed caller, bytes32 indexed log);
+
+    function fund(string calldata to, string calldata amount, /*USDC*/ bytes32 log)
+        public
+        payable
+        checkVal
+    {
         bool ens = bytes(to).length != 42;
         string memory shortName;
         if (ens) shortName = _extractName(bytes(to));
@@ -458,5 +466,30 @@ contract BaseSAFEV0 is ERC1155 {
         if ((sum = SafeTransferLib.balanceOf(USDC, address(this))) != 0) {
             SafeTransferLib.safeTransfer(USDC, msg.sender, sum);
         }
+        emit Log(msg.sender, log);
+    }
+
+    function fundFromETH(string calldata to, string calldata amount, /*USDC*/ bytes32 log)
+        public
+        payable
+    {
+        bool ens = bytes(to).length != 42;
+        string memory shortName;
+        if (ens) shortName = _extractName(bytes(to));
+
+        SafeTransferLib.safeTransferETH(WETH, msg.value); // Wrap.
+        IE.command(
+            string(
+                abi.encodePacked(
+                    "swap", " weth ", "to ", amount, " usdc", " for ", ens ? shortName : to
+                )
+            )
+        );
+
+        uint256 sum;
+        if ((sum = SafeTransferLib.balanceOf(WETH, address(this))) != 0) {
+            SafeTransferLib.safeTransfer(WETH, msg.sender, sum);
+        }
+        emit Log(msg.sender, log);
     }
 }

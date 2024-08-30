@@ -688,7 +688,98 @@ contract BaseSAFEV0Test is Test {
         vm.prank(nani); // Expect success.
         bsafe.burn(nani, id, 1);
     }
+
+    function testFund() public {
+        address recipient = address(0x123);
+        uint256 amount = 100 * 1e6; // 100 USDC.
+
+        uint256 whaleBalanceBefore = IERC20(usdc).balanceOf(whale);
+        uint256 recipientBalanceBefore = IERC20(usdc).balanceOf(recipient);
+
+        vm.prank(whale);
+        IERC20(usdc).approve(address(bsafe), type(uint256).max);
+
+        vm.prank(whale);
+        bsafe.fund(LibString.toHexStringChecksummed(recipient), "100", bytes32(0));
+
+        uint256 whaleBalanceAfter = IERC20(usdc).balanceOf(whale);
+        uint256 recipientBalanceAfter = IERC20(usdc).balanceOf(recipient);
+
+        assertEq(whaleBalanceBefore - whaleBalanceAfter, amount);
+        assertEq(recipientBalanceAfter - recipientBalanceBefore, amount);
+    }
+
+    function testFundWithENS() public {
+        string memory recipientENS = "nani.base.eth";
+        uint256 amount = 100 * 1e6; // 100 USDC.
+
+        uint256 whaleBalanceBefore = IERC20(usdc).balanceOf(whale);
+
+        vm.prank(whale);
+        IERC20(usdc).approve(address(bsafe), type(uint256).max);
+
+        vm.prank(whale);
+        bsafe.fund(recipientENS, "100", bytes32(0));
+
+        uint256 whaleBalanceAfter = IERC20(usdc).balanceOf(whale);
+        assertEq(whaleBalanceBefore - whaleBalanceAfter, amount);
+    }
+
+    function testFundFromETH() public {
+        address recipient = address(0x123);
+        uint256 ethAmount = 1 ether;
+        uint256 usdcAmount = 2400 * 1e6; // Assuming 1 ETH = 2400 USDC.
+
+        uint256 recipientBalanceBefore = IERC20(usdc).balanceOf(recipient);
+
+        vm.prank(whale);
+        bsafe.fundFromETH{value: ethAmount}(
+            LibString.toHexStringChecksummed(recipient), "2400", bytes32(0)
+        );
+
+        uint256 recipientBalanceAfter = IERC20(usdc).balanceOf(recipient);
+        assertEq(recipientBalanceAfter - recipientBalanceBefore, usdcAmount);
+    }
+
+    function testFundFromETHWithENS() public {
+        string memory recipientENS = "nani.base.eth";
+        uint256 ethAmount = 1 ether;
+
+        uint256 recipientBalanceBefore = IERC20(usdc).balanceOf(nani);
+
+        vm.prank(whale);
+        bsafe.fundFromETH{value: ethAmount}(recipientENS, "1000", bytes32(0));
+
+        assertEq(whale.balance, 99 ether);
+        assertTrue(recipientBalanceBefore + 1000 * 1e6 == IERC20(usdc).balanceOf(nani));
+    }
+
+    function testFundFromETHRefund() public {
+        address recipient = address(0x123);
+        uint256 ethAmount = 2 ether;
+        uint256 usdcAmount = 1000 * 1e6; // We're only requesting 1000 USDC.
+
+        uint256 recipientBalanceBefore = IERC20(usdc).balanceOf(recipient);
+        uint256 whaleBalanceBeforeWeth = IERC20(WETH).balanceOf(whale);
+
+        assertTrue(IERC20(WETH).balanceOf(address(bsafe)) == 0);
+
+        vm.prank(whale);
+        bsafe.fundFromETH{value: ethAmount}(
+            LibString.toHexStringChecksummed(recipient), "1000", bytes32(0)
+        );
+
+        uint256 whaleBalanceAfterWeth = IERC20(WETH).balanceOf(whale);
+        uint256 recipientBalanceAfter = IERC20(usdc).balanceOf(recipient);
+
+        assertEq(recipientBalanceAfter - recipientBalanceBefore, usdcAmount);
+        assertTrue(address(bsafe).balance == 0);
+        assertTrue(IERC20(WETH).balanceOf(address(bsafe)) == 0);
+        assertTrue(whaleBalanceAfterWeth > whaleBalanceBeforeWeth); // Check overpay refund.
+    }
 }
+
+address constant WETH = 0x4200000000000000000000000000000000000006;
 
 interface IERC20 {
     function balanceOf(address) external returns (uint256);
