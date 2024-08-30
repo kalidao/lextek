@@ -75,8 +75,9 @@ contract BaseSAFEV0 is ERC1155 {
         view
         returns (bool)
     {
-        return
-            SignatureCheckerLib.isValidSignatureNowCalldata(party, bytes32(safeHashId), signature);
+        return SignatureCheckerLib.isValidSignatureNowCalldata(
+            party, SignatureCheckerLib.toEthSignedMessageHash(bytes32(safeHashId)), signature
+        );
     }
 
     error Registered();
@@ -86,6 +87,7 @@ contract BaseSAFEV0 is ERC1155 {
         string calldata purchaseAmount,
         string calldata postMoneyValuationCap
     ) public returns (uint256 safeHashId) {
+        _toUint(bytes(purchaseAmount)); // Validate input.
         SAFE memory safe;
 
         string memory baseName = IE.whatIsTheNameOf(msg.sender);
@@ -167,7 +169,6 @@ contract BaseSAFEV0 is ERC1155 {
         safe.investorSignature = msg.sender;
 
         bool ens = bytes(safe.companyName).length != 42;
-
         string memory shortName;
         if (ens) shortName = _extractName(bytes(safe.companyName));
 
@@ -176,7 +177,10 @@ contract BaseSAFEV0 is ERC1155 {
         _mint(companyAddress, safeHashId, 1, "");
 
         SafeTransferLib.safeTransferFrom(
-            USDC, msg.sender, address(this), _toUint(bytes(safe.purchaseAmount))
+            USDC,
+            msg.sender,
+            address(this),
+            _toUint(bytes(safe.purchaseAmount)) // Validate again.
         );
         IE.command(
             string(
@@ -368,7 +372,7 @@ contract BaseSAFEV0 is ERC1155 {
         );
     }
 
-    mapping(uint256 safeHashId => mapping(address party => address to)) validTos;
+    mapping(uint256 safeHashId => mapping(address party => address to)) public validTos;
 
     function approveTransfer(uint256 safeHashId, address to) public {
         SAFE storage safe = safes[safeHashId];
@@ -390,11 +394,13 @@ contract BaseSAFEV0 is ERC1155 {
         bytes calldata data
     ) public override(ERC1155) {
         SAFE storage safe = safes[safeHashId];
-        if (to == validTos[safeHashId][safe.companySignature]) {
-            if (to == validTos[safeHashId][safe.investorSignature]) {
-                super.safeTransferFrom(from, to, safeHashId, amount, data);
-            }
+        if (
+            to != validTos[safeHashId][safe.companySignature]
+                || to != validTos[safeHashId][safe.investorSignature]
+        ) {
+            revert Unauthorized();
         }
+        super.safeTransferFrom(from, to, safeHashId, amount, data);
     }
 
     function safeBatchTransferFrom(
@@ -406,10 +412,11 @@ contract BaseSAFEV0 is ERC1155 {
     ) public override(ERC1155) {
         for (uint256 i; i != safeHashIds.length; ++i) {
             SAFE storage safe = safes[safeHashIds[i]];
-            if (to == validTos[safeHashIds[i]][safe.companySignature]) {
-                if (to != validTos[safeHashIds[i]][safe.investorSignature]) {
-                    revert Unauthorized();
-                }
+            if (
+                to != validTos[safeHashIds[i]][safe.companySignature]
+                    || to != validTos[safeHashIds[i]][safe.investorSignature]
+            ) {
+                revert Unauthorized();
             }
         }
         super.safeBatchTransferFrom(from, to, safeHashIds, amounts, data);
