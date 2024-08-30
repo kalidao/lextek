@@ -33,6 +33,10 @@ contract BaseSAFEV0Test is Test {
         section4 = ISections(address(new Section4()));
         section5 = ISections(address(new Section5()));
         bsafe = new BaseSAFEV0(section2, section3, section4, section5);
+        vm.label(address(bsafe), "BSAFE");
+        vm.deal(nani, 1 ether);
+        vm.deal(whale, 100 ether);
+        deal(usdc, whale, 1000000e6);
     }
 
     function testLogURI() public payable {
@@ -590,6 +594,99 @@ contract BaseSAFEV0Test is Test {
         string memory finalURI = bsafe.uri(id);
 
         assertTrue(keccak256(bytes(initialURI)) == keccak256(bytes(finalURI)));
+    }
+
+    function testBurn() public {
+        vm.prank(nani);
+        uint256 id = bsafe.send(LibString.toHexStringChecksummed(whale), "10000", "10000000");
+
+        assertEq(bsafe.balanceOf(whale, id), 1);
+
+        // Burn the SAFE.
+        vm.prank(whale);
+        bsafe.burn(whale, id, 1);
+
+        // Check balance after burning.
+        assertEq(bsafe.balanceOf(whale, id), 0);
+
+        // Try to burn again (should fail)
+        vm.expectRevert(); // Expect revert due to insufficient balance.
+        vm.prank(whale);
+        bsafe.burn(whale, id, 1);
+
+        // Try to burn from an address that doesn't own the token.
+        vm.expectRevert(); // Expect revert due to not being owner or approved.
+        vm.prank(whale);
+        bsafe.burn(nani, id, 1);
+    }
+
+    function testBurnAfterSigning() public {
+        // Create and sign a SAFE.
+        vm.prank(nani);
+        uint256 id = bsafe.send(LibString.toHexStringChecksummed(whale), "10000", "10000000");
+
+        vm.prank(whale);
+        IERC20(usdc).approve(address(bsafe), type(uint256).max);
+        vm.prank(whale);
+        bsafe.sign(id);
+
+        // Try to burn after signing (this should succeed as per current implementation).
+        vm.prank(whale);
+        bsafe.burn(whale, id, 1);
+
+        // Check balance after burning.
+        assertEq(bsafe.balanceOf(whale, id), 0);
+
+        // Try to burn after signing (this should succeed as per current implementation).
+        vm.prank(nani);
+        bsafe.burn(nani, id, 1);
+
+        // Check balance after burning.
+        assertEq(bsafe.balanceOf(nani, id), 0);
+    }
+
+    function testBurnByApprovedOperator() public {
+        vm.prank(nani);
+        uint256 id = bsafe.send(LibString.toHexStringChecksummed(whale), "10000", "10000000");
+
+        // Approve an operator.
+        address operator = address(0x3);
+        vm.prank(whale);
+        bsafe.setApprovalForAll(operator, true);
+
+        // Burn by the approved operator.
+        vm.prank(operator);
+        bsafe.burn(whale, id, 1);
+
+        // Check balance after burning.
+        assertEq(bsafe.balanceOf(whale, id), 0);
+    }
+
+    function testBurnFailByNonParty() public {
+        // Create and sign a SAFE.
+        vm.prank(nani);
+        uint256 id = bsafe.send(LibString.toHexStringChecksummed(whale), "10000", "10000000");
+
+        vm.prank(whale);
+        IERC20(usdc).approve(address(bsafe), type(uint256).max);
+        vm.prank(whale);
+        bsafe.sign(id);
+
+        vm.expectRevert(); // Expect revert due to insufficient approval.
+        // Try to burn as non-party (this should fail as per current implementation).
+        bsafe.burn(whale, id, 1);
+
+        // Check balance after.
+        assertEq(bsafe.balanceOf(whale, id), 1);
+
+        vm.expectRevert();
+        bsafe.burn(nani, id, 1);
+
+        // Check balance after burning.
+        assertEq(bsafe.balanceOf(nani, id), 1);
+
+        vm.prank(nani); // Expect success.
+        bsafe.burn(nani, id, 1);
     }
 }
 

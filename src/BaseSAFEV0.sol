@@ -421,4 +421,8 @@ contract BaseSAFEV0 is ERC1155 {
         }
         super.safeBatchTransferFrom(from, to, safeHashIds, amounts, data);
     }
+
+    function burn(address from, uint256 id, uint256 amount) public {
+        _burn(msg.sender, from, id, amount);
+    }
 }
