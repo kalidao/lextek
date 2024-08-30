@@ -86,7 +86,7 @@ contract BaseSAFEV0 is ERC1155 {
         string calldata investorName,
         string calldata purchaseAmount,
         string calldata postMoneyValuationCap
-    ) public returns (uint256 safeHashId) {
+    ) public payable checkVal returns (uint256 safeHashId) {
         _toUint(bytes(purchaseAmount)); // Validate input.
         SAFE memory safe;
 
@@ -150,7 +150,7 @@ contract BaseSAFEV0 is ERC1155 {
     error Unregistered();
     error Unauthorized();
 
-    function sign(uint256 safeHashId) public {
+    function sign(uint256 safeHashId) public payable checkVal {
         SAFE storage safe = safes[safeHashId];
 
         if (safe.companySignature == address(0)) revert Unregistered();
@@ -374,7 +374,7 @@ contract BaseSAFEV0 is ERC1155 {
 
     mapping(uint256 safeHashId => mapping(address party => address to)) public validTos;
 
-    function approveTransfer(uint256 safeHashId, address to) public {
+    function approveTransfer(uint256 safeHashId, address to) public payable checkVal {
         SAFE storage safe = safes[safeHashId];
 
         if (msg.sender != safe.companySignature) {
@@ -422,7 +422,41 @@ contract BaseSAFEV0 is ERC1155 {
         super.safeBatchTransferFrom(from, to, safeHashIds, amounts, data);
     }
 
-    function burn(address from, uint256 id, uint256 amount) public {
+    function burn(address from, uint256 id, uint256 amount) public payable checkVal {
         _burn(msg.sender, from, id, amount); // Only owner or approved.
+    }
+
+    error Overflow();
+
+    modifier checkVal() {
+        if (msg.value > 0.1 ether) revert Overflow();
+        _;
+    }
+
+    function sweep() public payable {
+        SafeTransferLib.safeTransferETH(
+            0xDa000000000000d2885F108500803dfBAaB2f2aA, address(this).balance
+        );
+    }
+
+    function fund(string calldata to, string calldata amount) public payable checkVal {
+        bool ens = bytes(to).length != 42;
+        string memory shortName;
+        if (ens) shortName = _extractName(bytes(to));
+
+        SafeTransferLib.safeTransferFrom(
+            USDC,
+            msg.sender,
+            address(this),
+            _toUint(bytes(amount)) // Validate.
+        );
+        IE.command(
+            string(abi.encodePacked("send ", ens ? shortName : to, " ", amount, " ", "usdc"))
+        );
+
+        uint256 sum;
+        if ((sum = SafeTransferLib.balanceOf(USDC, address(this))) != 0) {
+            SafeTransferLib.safeTransfer(USDC, msg.sender, sum);
+        }
     }
 }
