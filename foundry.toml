@@ -4,7 +4,7 @@ evm_version = "cancun"
 via_ir = true
 
 optimizer = true
-optimizer_runs = 9_999_999
+optimizer_runs = 999
 
 remappings = [
   "@solady=lib/solady/",

@@ -285,7 +285,7 @@ contract BaseSAFEV0 is ERC1155 {
                 Base64.encode(
                     bytes(
                         abi.encodePacked(
-                            '<svg xmlns="http://www.w3.org/2000/svg"',
+                            '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ',
                             'viewBox="0 0 800 4200" width="100%" height="100%" preserveAspectRatio="xMinYMin meet">',
                             "<style>",
                             '.legal-text { font-family: "Times New Roman", Times, serif; font-size: 12px; text-align: justify; line-height: 1.5; }',

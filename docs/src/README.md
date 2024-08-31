@@ -2,6 +2,8 @@
 
 100% onchain Y Combinator SAFE. Uses dynamic SVG to render legal text as a template completed by signatures to route USDC.
 
+`V0`: [`0x2afe00e9DeC100583600270c009BBc0001B400f6`](https://basescan.org/address/0x2afe00e9DeC100583600270c009BBc0001B400f6#code)
+
 ## Getting Started
 
 Run: `curl -L https://foundry.paradigm.xyz | bash && source ~/.bashrc && foundryup`
