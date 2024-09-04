@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.19;
 
-import {Section2} from "../src/Section2.sol";
-import {Section3} from "../src/Section3.sol";
-import {Section4} from "../src/Section4.sol";
-import {Section5} from "../src/Section5.sol";
-import {ISections, SAFE, BaseSAFEV0} from "../src/BaseSAFEV0.sol";
+import {Section2} from "../src/SAFE/Section2.sol";
+import {Section3} from "../src/SAFE/Section3.sol";
+import {Section4} from "../src/SAFE/Section4.sol";
+import {Section5} from "../src/SAFE/Section5.sol";
+import {ISections, SAFE, BaseSAFEV0} from "../src/SAFE/BaseSAFEV0.sol";
 import {Test} from "../lib/forge-std/src/Test.sol";
 
 import {LibString} from "@solady/src/utils/LibString.sol";
@@ -25,6 +25,8 @@ contract BaseSAFEV0Test is Test {
 
     address constant whale = 0x0B0A5886664376F59C351ba3f598C8A8B4D0A6f3;
     address constant usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+
+    address constant ethHolder = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     function setUp() public payable {
         vm.createSelectFork(vm.rpcUrl("base"));
@@ -728,13 +730,13 @@ contract BaseSAFEV0Test is Test {
     function testFundFromETH() public {
         address recipient = address(0x123);
         uint256 ethAmount = 1 ether;
-        uint256 usdcAmount = 2400 * 1e6; // Assuming 1 ETH = 2400 USDC.
+        uint256 usdcAmount = 2300 * 1e6; // Assuming 1 ETH = 2300 USDC.
 
         uint256 recipientBalanceBefore = IERC20(usdc).balanceOf(recipient);
 
-        vm.prank(whale);
+        vm.prank(ethHolder);
         bsafe.fundFromETH{value: ethAmount}(
-            LibString.toHexStringChecksummed(recipient), "2400", bytes32(0)
+            LibString.toHexStringChecksummed(recipient), "2300", bytes32(0)
         );
 
         uint256 recipientBalanceAfter = IERC20(usdc).balanceOf(recipient);
