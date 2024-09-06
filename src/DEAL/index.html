@@ -1,0 +1,2192 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Generate, sign, and manage Digital Escrow Agreements for Labor (DEAL) on the Base L2 network. Supports ENS addresses and USDC payments."
+    />
+    <title>Base DEAL</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon" />
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css"
+    />
+    <script>
+      const contractAddress = "0xde48c8005C008509000000D5c6F31BC3a66E1900";
+      const contractABI = [
+        "function draft(tuple(string,string,string,string,string,string,string,uint256,address,address)) view returns (string)",
+        "function send(string,string,string,string,tuple(uint256,uint256,uint256)) payable returns (uint256)",
+        "function getHashId(tuple(string,string,string,string,string,string,string,uint256,address,address)) public pure returns (uint256)",
+        "function checkSignature(address, uint256, bytes) view returns (bool)",
+        "function getHashIds(address) view returns (uint256[])",
+        "function deals(uint256) view returns (tuple(string,string,string,string,string,string,uint256,address,address))",
+        "function uri(uint256) view returns (string)",
+        "function sign(uint256) public",
+      ];
+
+
+      const erc1155Address = "0x77B16A327E503be5c25BAeB4682527F2865c8E00";
+      const erc1155ABI = [
+        "function balanceOf(address account, uint256 id) view returns (uint256)",
+      ];
+
+
+      const ieAddress = "0x1e00cE4800dE0D0000640070006dfc5F93dD0ff9";
+      const ieABI = [
+        "function whatIsTheNameOf(address) view returns (string)",
+        "function whatIsTheAddressOf(string) view returns (address, address, bytes32)",
+      ];
+
+
+      const BASE_CHAIN_ID = "0x2105"; // Hexadecimal representation of 8453.
+      const BASE_CHAIN_DETAILS = {
+        chainId: BASE_CHAIN_ID,
+        chainName: "Base",
+        nativeCurrency: {
+          name: "Ether",
+          symbol: "ETH",
+          decimals: 18,
+        },
+        rpcUrls: ["https://mainnet.base.org"],
+        blockExplorerUrls: ["https://basescan.org"],
+      };
+
+
+      let provider, signer, contract, ie, userAddress;
+
+
+      const dealInputs = {
+        clientName: "",
+        providerName: "",
+        resolverName: "curia.base.eth",
+        dealAmount: "100",
+        dealNotes: "",
+        dealDate: "",
+        expiryDate: "",
+        expiryTimestamp: 0,
+        providerSignature: ethers.constants.AddressZero,
+        clientSignature: ethers.constants.AddressZero,
+      };
+
+
+      function initializeAndValidateForm() {
+        // Set default value for dealAmount
+        const dealAmountInput = document.getElementById("dealAmount");
+        dealAmountInput.value = dealInputs.dealAmount;
+
+
+        // Set default value for resolverName
+        const resolverNameInput = document.getElementById("resolverName");
+        resolverNameInput.value = dealInputs.resolverName;
+
+
+        // Validate the dealAmount
+        validateAmount(dealInputs.dealAmount, "dealAmount");
+
+
+        // Validate the resolverName (without ERC1155 check)
+        const isValid =
+          isValidEthAddress(dealInputs.resolverName) ||
+          dealInputs.resolverName.endsWith(".base.eth");
+        resolverNameInput.classList.toggle("valid", isValid);
+        resolverNameInput.classList.toggle("invalid", !isValid);
+
+
+        // Update the preview if the contract is available
+        if (contract) {
+          updatePreview();
+        }
+      }
+
+
+      // Convert date to epoch days (matching the Solidity logic).
+      const dateToEpochDay = (year, month, day) => {
+        if (month < 3) {
+          year -= 1;
+          month += 12;
+        }
+
+
+        const era = Math.floor(year / 400);
+        const yoe = year % 400;
+        const doy = Math.floor((153 * (month + 1)) / 5) + day - 123;
+        const doe =
+          yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+        const epochDay = era * 146097 + doe - 719468;
+
+
+        return epochDay;
+      };
+
+
+      // Convert date to Unix timestamp (matching the Solidity logic).
+      const dateToTimestamp = (year, month, day) => {
+        const epochDay = dateToEpochDay(year, month, day);
+        return epochDay * 86400;
+      };
+
+
+      // Utility function to format date to "M/D/YYYY".
+      const formatDateMMDDYYYY = (dateString) => {
+        const date = new Date(dateString);
+        if (isNaN(date)) {
+          return "";
+        }
+
+
+        const month = `${date.getMonth() + 1}`;
+        const day = `${date.getDate()}`;
+        const year = date.getFullYear();
+        return `${month}/${day}/${year}`;
+      };
+
+
+      // Function to generate Unix timestamp for a given date in M/D/YYYY format.
+      const convertToTimestamp = (formattedDate) => {
+        const dateParts = formattedDate.split("/");
+        const month = parseInt(dateParts[0], 10);
+        const day = parseInt(dateParts[1], 10);
+        const year = parseInt(dateParts[2], 10);
+
+
+        return dateToTimestamp(year, month, day);
+      };
+
+
+      // Validate and format the expiry date.
+      const validateExpiryDate = (dateString) => {
+        const input = document.getElementById("expiryDate");
+        if (!dateString) {
+          input.classList.remove("valid", "invalid", "immediate", "escrow");
+          return false;
+        }
+
+
+        const formattedDate = formatDateMMDDYYYY(dateString);
+        if (!formattedDate) {
+          input.classList.add("invalid");
+          input.classList.remove("valid", "immediate", "escrow");
+          return false;
+        }
+
+
+        const selectedDate = new Date(formattedDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison.
+
+
+        input.classList.remove("invalid");
+        input.classList.add("valid");
+
+
+        if (selectedDate < today) {
+          input.classList.add("immediate");
+          input.classList.remove("escrow");
+          showNotification("Date set for immediate invoicing", "info");
+        } else {
+          input.classList.add("escrow");
+          input.classList.remove("immediate");
+          showNotification("Date set for future escrow", "info");
+        }
+
+
+        return formattedDate;
+      };
+
+
+      // Update form inputs.
+      const updateInputs = async () => {
+        for (const key of Object.keys(dealInputs)) {
+          if (
+            ![
+              "providerSignature",
+              "clientSignature",
+              "dealDate",
+              "expiryTimestamp",
+            ].includes(key)
+          ) {
+            const inputValue = document.getElementById(key).value.trim();
+            dealInputs[key] = inputValue !== "" ? inputValue : dealInputs[key];
+
+
+            // Add specific validation for resolverName
+            if (key === "resolverName") {
+              await validateResolverName(dealInputs[key]);
+            }
+          }
+        }
+
+
+        dealInputs.dealDate = formatDateMMDDYYYY(
+          new Date().toISOString().split("T")[0]
+        );
+
+
+        const expiryDateInput = document.getElementById("expiryDate").value;
+        const formattedExpiryDate = validateExpiryDate(expiryDateInput);
+
+
+        if (formattedExpiryDate) {
+          dealInputs.expiryTimestamp = convertToTimestamp(formattedExpiryDate);
+          dealInputs.expiryDate = formattedExpiryDate;
+        } else {
+          dealInputs.expiryDate = "";
+          dealInputs.expiryTimestamp = 0;
+        }
+
+
+        console.log("Updated Inputs:", dealInputs);
+        await checkAllInputsFilled();
+      };
+
+
+      const validateProviderName = async (name) => {
+        const input = document.getElementById("providerName");
+        let isValid = false;
+
+
+        if (name === dealInputs.providerName) {
+          isValid = true; // Always valid for the connected provider.
+        } else if (name.endsWith(".base.eth")) {
+          try {
+            const queryString = name.slice(0, -9); // Remove '.base.eth'.
+            const [, address] = await ie.whatIsTheAddressOf(queryString);
+            isValid = address && address !== ethers.constants.AddressZero;
+          } catch (error) {
+            console.error("Provider name validation failed:", error);
+          }
+        } else {
+          isValid = ethers.utils.isAddress(name);
+        }
+
+
+        input.classList.toggle("valid", isValid);
+        input.classList.toggle("invalid", !isValid);
+        return isValid;
+      };
+
+
+      const isValidEthAddress = (address) => {
+        try {
+          return ethers.utils.isAddress(address);
+        } catch (error) {
+          return false;
+        }
+      };
+
+
+      const validateClientName = (name) => {
+        const inputElement = document.getElementById("clientName");
+        const isValid = isValidEthAddress(name) || name.endsWith(".base.eth");
+
+
+        inputElement.classList.toggle("valid", isValid);
+        inputElement.classList.toggle("invalid", !isValid);
+        return isValid;
+      };
+
+
+      const validateResolverName = async (name) => {
+        const inputElement = document.getElementById("resolverName");
+        let isValid = isValidEthAddress(name) || name.endsWith(".base.eth");
+        let hasERC1155Balance = false;
+
+
+        inputElement.classList.toggle("valid", isValid);
+        inputElement.classList.remove("invalid", "gold");
+
+
+        if (isValid && provider && signer) {
+          try {
+            const resolverAddress = await getAddressFromNameOrAddress(name);
+            const erc1155Contract = new ethers.Contract(
+              erc1155Address,
+              erc1155ABI,
+              provider
+            );
+            const balance = await erc1155Contract.balanceOf(resolverAddress, 0);
+
+
+            hasERC1155Balance = balance.gte(1);
+
+
+            if (hasERC1155Balance) {
+              inputElement.classList.add("gold");
+            }
+          } catch (error) {
+            console.error("Error checking ERC1155 balance:", error);
+          }
+        }
+
+
+        return isValid;
+      };
+
+
+      const validateDealNotes = (notes) => {
+        const input = document.getElementById("dealNotes");
+        const isValid = notes.trim().length > 0 && notes.length <= 200;
+        input.classList.toggle("valid", isValid);
+        input.classList.toggle("invalid", !isValid);
+        return isValid;
+      };
+
+
+      const getAddressFromNameOrAddress = async (nameOrAddress) => {
+        if (ethers.utils.isAddress(nameOrAddress)) {
+          return nameOrAddress;
+        } else if (ie) {
+          const queryString = nameOrAddress.replace(/\.base\.eth$/, "");
+          const [, address] = await ie.whatIsTheAddressOf(queryString);
+          return address;
+        } else {
+          throw new Error(
+            "ENS contract not initialized. Please connect your wallet."
+          );
+        }
+      };
+
+
+      const validateAmount = (amount, elementId) => {
+        const input = document.getElementById(elementId);
+        const value = parseFloat(amount);
+        const isValid =
+          !isNaN(value) && value > 0 && Number.isInteger(value * 1e6);
+        input.classList.toggle("valid", isValid);
+        input.classList.toggle("invalid", !isValid);
+        return isValid;
+      };
+
+
+      const toggleNotificationArea = () => {
+        console.log("Toggle notification area called");
+        const content = document.getElementById("notificationContent");
+        content.style.display =
+          content.style.display === "none" ? "block" : "none";
+        console.log("Notification content display:", content.style.display);
+      };
+
+
+      const updateNotificationCounter = (count) => {
+        console.log("Updating notification counter with count:", count);
+        const counterElement = document.getElementById("notificationCounter");
+        const toggleButton = document.getElementById("toggleNotification");
+
+
+        if (count > 0) {
+          console.log("Setting counter and displaying toggle button");
+          counterElement.textContent = count;
+          toggleVisibility("toggleNotification", true);
+          toggleVisibility("notificationArea", true);
+        } else {
+          console.log("Hiding toggle button");
+          toggleVisibility("toggleNotification", false);
+          toggleVisibility("notificationArea", false);
+        }
+      };
+
+
+      const populateHashIdDropdown = (ids) => {
+        console.log("Populating hash ID dropdown with ids:", ids);
+        const dropdown = document.getElementById("hashIdDropdown");
+        dropdown.innerHTML = '<option value="">Select a DEAL</option>';
+
+
+        ids.forEach((id, index) => {
+          const option = document.createElement("option");
+          option.value = id.toString(); // Ensure it's stored as a string.
+          option.textContent = `DEAL ${index + 1}`;
+          dropdown.appendChild(option);
+        });
+        console.log("Dropdown populated");
+      };
+
+
+      const switchToBaseNetwork = async () => {
+        try {
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: BASE_CHAIN_ID }],
+          });
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            try {
+              await window.ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [BASE_CHAIN_DETAILS],
+              });
+            } catch (addError) {
+              throw new Error("Failed to add Base network to MetaMask");
+            }
+          } else {
+            throw new Error("Failed to switch to Base network");
+          }
+        }
+      };
+
+
+      const connectWallet = async () => {
+        console.log("Connecting wallet...");
+
+
+        if (typeof window.ethereum === "undefined") {
+          showNotification("Please install MetaMask!", "error");
+          return;
+        }
+
+
+        if (userAddress) {
+          window.open(`https://basescan.org/address/${userAddress}`, "_blank");
+          return;
+        }
+
+
+        showLoading(true);
+
+
+        try {
+          await window.ethereum.request({ method: "eth_requestAccounts" });
+          const chainId = await window.ethereum.request({
+            method: "eth_chainId",
+          });
+
+
+          if (chainId !== BASE_CHAIN_ID) {
+            await switchToBaseNetwork();
+          }
+
+
+          provider = new ethers.providers.Web3Provider(window.ethereum);
+          signer = provider.getSigner();
+          contract = new ethers.Contract(contractAddress, contractABI, signer);
+          ie = new ethers.Contract(ieAddress, ieABI, signer);
+
+
+          userAddress = await signer.getAddress();
+          console.log("Connected wallet address:", userAddress);
+
+
+          const hashIds = await fetchHashIds(userAddress);
+          console.log("Fetched hash IDs:", hashIds);
+
+
+          updateNotificationCounter(hashIds.length);
+          populateHashIdDropdown(hashIds);
+
+
+          setupEventListeners();
+
+
+          toggleVisibility("notificationArea", true);
+
+
+          dealInputs.providerSignature = userAddress;
+
+
+          try {
+            const ensName = await ie.whatIsTheNameOf(userAddress);
+            dealInputs.providerName =
+              ensName || ethers.utils.getAddress(userAddress);
+          } catch (error) {
+            console.error("ENS lookup failed:", error);
+            dealInputs.providerName = ethers.utils.getAddress(userAddress);
+          }
+
+
+          const providerNameInput = document.getElementById("providerName");
+          providerNameInput.value = dealInputs.providerName;
+          providerNameInput.readOnly = true;
+          await validateProviderName(dealInputs.providerName);
+
+
+          document.getElementById("dealAmount").value = dealInputs.dealAmount;
+
+
+          document
+            .getElementById("hashIdDropdown")
+            .addEventListener("change", (event) => {
+              if (event.target.value) {
+                displayDEALDetails(event.target.value);
+              } else {
+                toggleVisibility("dealDetailsWindow", false);
+              }
+            });
+
+
+          const debouncedUpdatePreview = debounce(updatePreview, 300);
+
+
+          const connectWalletBtn = document.getElementById("connectWallet");
+          const displayName = dealInputs.providerName.endsWith(".base")
+            ? dealInputs.providerName
+            : shortenAddress(userAddress);
+
+
+          connectWalletBtn.innerHTML = `<span id="walletText"><a href="https://basescan.org/address/${userAddress}" target="_blank">${displayName}</a></span>`;
+          connectWalletBtn.classList.add("connected");
+          connectWalletBtn.classList.remove("flashing");
+          showNotification(
+            "Wallet connected successfully to Base network",
+            "success"
+          );
+          updatePreview();
+        } catch (error) {
+          console.error("Failed to connect wallet:", error);
+          showNotification(getWalletErrorMessage(error), "error");
+        } finally {
+          showLoading(false);
+        }
+      };
+
+
+      const getWalletErrorMessage = (error) => {
+        if (error.code === 4001) {
+          return "You rejected the connection request. Please try again.";
+        } else if (error.code === -32002) {
+          return "The connection request is already pending. Please check your MetaMask extension.";
+        } else if (
+          error.message.includes("Already processing eth_requestAccounts")
+        ) {
+          return "A connection request is already in progress. Please check your MetaMask extension.";
+        }
+        return `Failed to connect wallet: ${error.message}`;
+      };
+
+
+      const fetchHashIds = async (address) => {
+        try {
+          console.log("Fetching hash IDs for address:", address);
+          const ids = await contract.getHashIds(address);
+          console.log("Fetched hash IDs:", ids);
+          return ids.map((id) => id.toString());
+        } catch (error) {
+          console.error("Error fetching hash IDs:", error);
+          showNotification(
+            "Failed to fetch DEAL IDs. Please try again.",
+            "error"
+          );
+          return [];
+        }
+      };
+
+
+      let signModal;
+
+
+      const displayDEALDetails = async (hashId) => {
+        try {
+          console.log("Fetching DEAL details for hashId:", hashId);
+
+
+          const hashIdBN = ethers.BigNumber.from(hashId);
+          console.log("HashId as BigNumber:", hashIdBN.toString());
+
+
+          // Encode the function call and make a raw call to the contract.
+          const data = contract.interface.encodeFunctionData("deals", [
+            hashIdBN,
+          ]);
+          const rawResult = await provider.call({
+            to: contract.address,
+            data: data,
+          });
+
+
+          console.log("Raw result:", rawResult);
+
+
+          // Decode the response data.
+          const decodedResult = ethers.utils.defaultAbiCoder.decode(
+            [
+              "string", // clientName
+              "string", // providerName
+              "string", // resolverName
+              "string", // dealAmount
+              "string", // dealNotes
+              "string", // dealDate
+              "string", // expiryDate
+              "uint256", // expiryTimestamp
+              "address", // providerSignature
+              "address", // clientSignature
+            ],
+            rawResult
+          );
+
+
+          console.log("Decoded Result:", decodedResult);
+
+
+          const [
+            clientName,
+            providerName,
+            resolverName,
+            dealAmount,
+            dealNotes,
+            dealDate,
+            expiryDate,
+            expiryTimestamp,
+            providerSignature,
+            clientSignature,
+          ] = decodedResult;
+
+
+          // Check if the DEAL is signed.
+          const isSigned = clientSignature !== ethers.constants.AddressZero;
+
+
+          // Log the parsed results
+          console.log("Parsed DEAL details:", {
+            clientName,
+            providerName,
+            resolverName,
+            dealAmount,
+            dealNotes,
+            dealDate,
+            expiryDate,
+            expiryTimestamp,
+            providerSignature,
+            clientSignature,
+          });
+
+
+          // Update the UI details window.
+          const detailsWindow = document.getElementById("dealDetailsWindow");
+          detailsWindow.innerHTML = `
+      <button id="closeDetailsWindow">&times;</button>
+      <h3>DEAL Details</h3>
+      <p><strong>ID:</strong> <a href="https://opensea.io/assets/base/0xde48c8005C008509000000D5c6F31BC3a66E1900/${hashId}"
+      target="_blank">${hashId}</a></p>
+      <p><strong>Client Name:</strong> ${clientName}</p>
+      <p><strong>Provider Name:</strong> ${providerName}</p>
+      <p><strong>Resolver Name:</strong> ${resolverName}</p>
+      <p><strong>Deal Amount:</strong> ${dealAmount} USDC</p>
+      <p><strong>Deal Notes:</strong> ${dealNotes}</p>
+      <p><strong>Deal Date:</strong> ${dealDate}</p>
+      <p><strong>Expiry Date:</strong> ${expiryDate}</p>
+      <p><strong>Provider Signature:</strong> <a href="https://basescan.org/address/${providerSignature}"
+      target="_blank">${shortenAddress(providerSignature)}</a></p>
+      <p><strong>Client Signature:</strong> <a href="https://basescan.org/address/${clientSignature}" target="_blank">
+      ${shortenAddress(clientSignature)}</a></p>
+      ${
+        isSigned
+          ? "<p>DEAL already signed ✔️</p>"
+          : userAddress === (await getAddressFromNameOrAddress(clientName))
+          ? `<button id="signDEAL" title="Sign DEAL"><i class="fas fa-file-signature"></i> Sign DEAL</button>`
+          : ""
+      }`;
+
+
+          // Add event listener for the close button.
+          document
+            .getElementById("closeDetailsWindow")
+            .addEventListener("click", () => {
+              detailsWindow.style.opacity = 0;
+              setTimeout(() => {
+                detailsWindow.style.display = "none";
+                detailsWindow.style.transition = "";
+              }, 300);
+            });
+
+
+          // Add event listener for the Sign DEAL button.
+          if (
+            !isSigned &&
+            userAddress === (await getAddressFromNameOrAddress(clientName))
+          ) {
+            const signDEALButton = document.getElementById("signDEAL");
+            signDEALButton.addEventListener(
+              "click",
+              createSigningModal.bind(null, hashId, hashIdBN)
+            );
+          }
+
+
+          // Show the details window with a fade-in effect.
+          detailsWindow.style.display = "block";
+          detailsWindow.style.opacity = 0;
+          setTimeout(() => {
+            detailsWindow.style.transition = "opacity 0.3s";
+            detailsWindow.style.opacity = 1;
+          }, 10);
+        } catch (error) {
+          console.error("Error fetching DEAL details:", error);
+          showNotification("Failed to fetch DEAL details", "error");
+        }
+      };
+
+
+      const createSigningModal = async (hashId, hashIdBN) => {
+        try {
+          const uriData = await contract.uri(hashId);
+          console.log("Fetched SVG data for preview:", uriData);
+
+
+          const jsonResponse = atob(uriData.split(",")[1]);
+          const svgData = JSON.parse(jsonResponse).image;
+
+
+          if (!signModal) {
+            signModal = document.createElement("div");
+            signModal.classList.add("modal");
+            document.body.appendChild(signModal);
+          }
+
+
+          signModal.innerHTML = `
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Preview</h2>
+        <div class="svg-container" style="text-align: center;">
+          <img src="${svgData}" alt="DEAL Document Preview" style="max-width: 100%; height: auto;" />
+        </div>
+        <button id="confirmSign" title="Confirm Signature">
+          <i class="fas fa-check"></i> Confirm Signature
+        </button>
+      </div>`;
+
+
+          signModal.style.display = "block";
+
+
+          signModal.querySelector(".close").onclick = () => {
+            signModal.style.display = "none";
+          };
+          window.onclick = (event) => {
+            if (event.target == signModal) {
+              signModal.style.display = "none";
+            }
+          };
+
+
+          const confirmSignButton = document.getElementById("confirmSign");
+          confirmSignButton.addEventListener("click", async function () {
+            try {
+              const usdcAddress = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+              const usdcABI = [
+                "function approve(address spender, uint256 amount) public returns (bool)",
+                "function allowance(address owner, address spender) public view returns (uint256)",
+              ];
+              const usdcContract = new ethers.Contract(
+                usdcAddress,
+                usdcABI,
+                signer
+              );
+
+
+              const allowance = await usdcContract.allowance(
+                userAddress,
+                contractAddress
+              );
+              console.log("Current USDC allowance:", allowance.toString());
+
+
+              const requiredAmount = ethers.utils.parseUnits("10000", 6);
+              if (allowance.lt(requiredAmount)) {
+                const approvalTx = await usdcContract.approve(
+                  contractAddress,
+                  requiredAmount
+                );
+                console.log("Approval transaction sent:", approvalTx);
+
+
+                await approvalTx.wait();
+                console.log("Approval transaction confirmed");
+
+
+                showNotification(
+                  "USDC approval succeeded. Proceeding with signing...",
+                  "info"
+                );
+              }
+
+
+              const tx = await contract.sign(hashIdBN);
+              console.log("Sign transaction sent:", tx);
+
+
+              await tx.wait();
+              console.log("Sign transaction confirmed");
+
+
+              showNotification("DEAL signed successfully!", "success");
+              signModal.style.display = "none";
+              displayDEALDetails(hashId);
+            } catch (error) {
+              console.error("Error during signing flow:", error);
+              showNotification(
+                "Failed during signing flow. Please try again.",
+                "error"
+              );
+            }
+          });
+        } catch (uriError) {
+          console.error("Error fetching SVG:", uriError);
+          showNotification("Failed to fetch DEAL document preview.", "error");
+        }
+      };
+
+
+      function setupEventListeners() {
+        const hashIdDropdown = document.getElementById("hashIdDropdown");
+        if (hashIdDropdown) {
+          hashIdDropdown.addEventListener("change", (event) => {
+            if (event.target.value) {
+              displayDEALDetails(event.target.value);
+            }
+          });
+        } else {
+          console.warn("hashIdDropdown element not found");
+        }
+      }
+
+
+      const updatePreview = async () => {
+        updateInputs();
+
+
+        if (!contract) {
+          console.log("Wallet not connected, skipping preview update");
+          return;
+        }
+
+
+        showLoading(true);
+
+
+        try {
+          const base64String = await contract.draft(Object.values(dealInputs));
+          const jsonString = atob(base64String.split(",")[1]);
+          const jsonData = JSON.parse(jsonString);
+          const svgData = jsonData.image;
+
+
+          const img = document.getElementById("preview");
+          img.src = svgData;
+          img.style.display = "block";
+
+
+          const hashId = await contract.getHashId(Object.values(dealInputs));
+          dealHashId = hashId.toString();
+          const predictedHashId = document.getElementById("predictedHashId");
+          predictedHashId.innerHTML = `Hash ID: ${dealHashId}`;
+          predictedHashId.style.display = "block";
+
+
+          signableMessage = ethers.utils.hexZeroPad(
+            ethers.BigNumber.from(dealHashId).toHexString(),
+            32
+          );
+
+
+          document.getElementById(
+            "signableMessage"
+          ).textContent = `Message to sign: ${signableMessage}`;
+          document.getElementById("signableMessage").style.display = "block";
+        } catch (error) {
+          console.error("Failed to update preview:", error);
+          document.getElementById("preview").style.display = "none";
+          document.getElementById("predictedHashId").style.display = "none";
+          document.getElementById("signableMessage").style.display = "none";
+
+
+          if (error.code === -32005) {
+            // Rate limit error.
+            console.log("Rate limit hit, retrying after delay...");
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay.
+            await updatePreview(); // Retry.
+          } else {
+            console.error("Failed to update preview:", error);
+            showNotification(
+              `Failed to update preview: ${error.message}. Please ensure your wallet is connected to the Base network.`,
+              "error"
+            );
+          }
+        } finally {
+          showLoading(false);
+        }
+      };
+
+
+      let signableMessage = "";
+      let dealHashId = "";
+
+
+      const fetchIPAddress = async () => {
+        try {
+          const response = await fetch("https://api.ipify.org?format=json");
+          const data = await response.json();
+          return data.ip;
+        } catch (error) {
+          console.error("Failed to fetch IP address:", error);
+          return "Unknown";
+        }
+      };
+
+
+      const handlePreviewClick = async () => {
+        if (!signer) {
+          showNotification("Please connect your wallet first.", "error");
+          return;
+        }
+
+
+        try {
+          const signature = await signer.signMessage(
+            ethers.utils.arrayify(signableMessage)
+          );
+
+
+          const timestamp = new Date().toISOString();
+          const ipAddress = await fetchIPAddress();
+          const signerAddress = await signer.getAddress();
+
+
+          const isValid = await contract.checkSignature(
+            signerAddress,
+            dealHashId,
+            signature
+          );
+
+
+          const signatureData = `Hash ID: ${dealHashId}
+                  Message signed: ${signableMessage}
+                  Signature: ${signature}
+                  Signer Address: ${signerAddress}
+                  Contract Address: ${contractAddress}
+                  Timestamp: ${timestamp}
+                  IP Address: ${ipAddress}
+                  Signature Valid: ${isValid ? "Yes" : "No"}`;
+
+
+          const blob = new Blob([signatureData], { type: "text/plain" });
+          const downloadLink = document.getElementById("downloadSignature");
+          downloadLink.href = URL.createObjectURL(blob);
+
+
+          document.getElementById("signatureContainer").style.display = "block";
+          document.getElementById("signatureValidation").textContent = isValid
+            ? "✅"
+            : "❌";
+          showNotification(
+            isValid
+              ? "Signature created and validated successfully!"
+              : "Signature created but validation failed.",
+            isValid ? "success" : "warning"
+          );
+        } catch (error) {
+          console.error("Signing failed:", error);
+          showNotification(
+            "Failed to sign the message. Please try again.",
+            "error"
+          );
+        }
+      };
+
+
+      const submitDEAL = async () => {
+        if (!contract) {
+          showNotification(
+            "Please connect your wallet before submitting.",
+            "error"
+          );
+          return;
+        }
+
+
+        if (!validateForm()) return;
+
+
+        if (!(await confirmSubmission())) return;
+
+
+        const submitButton = document.getElementById("submitDEAL");
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-paper-plane fa-spin"></i>';
+        showLoading(true);
+
+
+        try {
+          if (!dealInputs.expiryDate) {
+            throw new Error("Expiry date is required");
+          }
+
+
+          const [month, day, year] = dealInputs.expiryDate
+            .split("/")
+            .map(Number);
+
+
+          if (!month || !day || !year) {
+            throw new Error("Invalid expiry date format");
+          }
+
+
+          console.log("Submitting DEAL with the following data:", {
+            clientName: dealInputs.clientName,
+            resolverName: dealInputs.resolverName,
+            dealAmount: dealInputs.dealAmount,
+            dealNotes: dealInputs.dealNotes,
+            expiryDate: [month, day, year],
+          });
+
+
+          const tx = await contract.send(
+            dealInputs.clientName,
+            dealInputs.resolverName,
+            dealInputs.dealAmount,
+            dealInputs.dealNotes,
+            [month, day, year]
+          );
+
+
+          console.log("Transaction sent:", tx.hash);
+          showNotification(
+            "DEAL submission in progress. Please wait for confirmation.",
+            "info"
+          );
+
+
+          const receipt = await tx.wait();
+          console.log("Transaction confirmed:", receipt);
+
+
+          showNotification("DEAL submitted successfully!", "success");
+
+
+          resetForm();
+          updatePreview();
+        } catch (error) {
+          console.error("Failed to submit DEAL:", error);
+          showNotification(
+            `Failed to submit DEAL: ${error.message}. Please check your wallet connection and try again.`,
+            "error"
+          );
+        } finally {
+          submitButton.disabled = false;
+          submitButton.innerHTML = '<i class="fas fa-paper-plane"></i>';
+          showLoading(false);
+        }
+      };
+
+
+      const validateForm = () => {
+        const isValid = [
+          validateProviderName(dealInputs.providerName),
+          validateClientName(dealInputs.clientName),
+          validateResolverName(dealInputs.resolverName),
+          validateAmount(dealInputs.dealAmount, "dealAmount"),
+          dealInputs.dealNotes.trim() !== "",
+          dealInputs.expiryDate.trim() !== "",
+        ].every(Boolean);
+
+
+        if (!isValid) {
+          showNotification(
+            "Please correct the invalid fields before submitting.",
+            "error"
+          );
+        }
+
+
+        return isValid;
+      };
+
+
+      const confirmSubmission = () => {
+        return new Promise((resolve) => {
+          const modal = document.getElementById("confirmationModal");
+          modal.style.display = "block";
+
+
+          document.getElementById("confirmSubmit").onclick = () => {
+            modal.style.display = "none";
+            resolve(true);
+          };
+
+
+          document.getElementById("cancelSubmit").onclick = () => {
+            modal.style.display = "none";
+            resolve(false);
+          };
+
+
+          window.onclick = (event) => {
+            if (event.target == modal) {
+              modal.style.display = "none";
+              resolve(false);
+            }
+          };
+        });
+      };
+
+
+      const resetForm = () => {
+        Object.keys(dealInputs).forEach((key) => {
+          if (
+            ![
+              "providerSignature",
+              "clientSignature",
+              "dealDate",
+              "expiryTimestamp",
+            ].includes(key)
+          ) {
+            document.getElementById(key).value = "";
+            document.getElementById(key).classList.remove("valid", "invalid");
+          }
+        });
+        document.getElementById("preview").style.display = "none";
+        document.getElementById("predictedHashId").style.display = "none";
+        document.getElementById("signableMessage").style.display = "none";
+        document.getElementById("resetForm").style.display = "none";
+        document.getElementById("submitDEAL").style.display = "none";
+        showNotification("Form reset successfully", "success");
+      };
+
+
+      const checkAllInputsFilled = async () => {
+        const allFilled = await Promise.all(
+          Object.keys(dealInputs).map(async (key) => {
+            if (
+              [
+                "providerSignature",
+                "clientSignature",
+                "dealDate",
+                "expiryTimestamp",
+              ].includes(key)
+            ) {
+              return true;
+            }
+            if (key === "resolverName") {
+              return await validateResolverName(dealInputs[key]);
+            }
+            return dealInputs[key].trim() !== "";
+          })
+        ).then((results) => results.every(Boolean));
+
+
+        document.getElementById("resetForm").style.display = allFilled
+          ? "inline-block"
+          : "none";
+        document.getElementById("submitDEAL").style.display = allFilled
+          ? "inline-block"
+          : "none";
+      };
+
+
+      const debounce = (func, delay) => {
+        let timeoutId;
+        return (...args) => {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => func.apply(this, args), delay);
+        };
+      };
+
+
+      const showNotification = (message, type) => {
+        const notification = document.getElementById("notification");
+        notification.textContent = message;
+        notification.className = `notification ${type}`;
+        notification.style.display = "block";
+        setTimeout(() => {
+          notification.style.display = "none";
+        }, 1700);
+      };
+
+
+      const showLoading = (isLoading) => {
+        document.getElementById("loader").style.display = isLoading
+          ? "block"
+          : "none";
+      };
+
+
+      const shortenAddress = (address) =>
+        `${address.slice(0, 6)}...${address.slice(-4)}`;
+
+
+      const toggleDarkMode = () => {
+        document.body.classList.toggle("dark-mode");
+        const darkModeToggle = document.getElementById("darkModeToggle");
+        darkModeToggle.innerHTML = document.body.classList.contains("dark-mode")
+          ? '<i class="fas fa-sun"></i>'
+          : '<i class="fas fa-moon"></i>';
+        updateBaseLogo();
+      };
+
+
+      const toggleVisibility = (elementId, show) => {
+        const element = document.getElementById(elementId);
+        if (element) {
+          element.style.display = show ? "block" : "none";
+        } else {
+          console.warn(`Element with ID ${elementId} not found.`);
+        }
+      };
+
+
+      const updateBaseLogo = () => {
+        const baseLogo = document.getElementById("baseLogo");
+        baseLogo.src = document.body.classList.contains("dark-mode")
+          ? "https://raw.githubusercontent.com/base-org/brand-kit/main/logo/symbol/Base_Symbol_White.svg"
+          : "https://raw.githubusercontent.com/base-org/brand-kit/main/logo/symbol/Base_Symbol_Black.svg";
+      };
+
+
+      const openBasescanLink = async (inputId) => {
+        const input = document.getElementById(inputId);
+        const address = await getAddressFromNameOrAddress(input.value);
+        if (address) {
+          window.open(`https://basescan.org/address/${address}`, "_blank");
+        }
+      };
+
+
+      window.addEventListener("load", () => {
+        document
+          .getElementById("clientName")
+          .addEventListener("input", (event) =>
+            validateClientName(event.target.value)
+          );
+        document
+          .getElementById("resolverName")
+          .addEventListener("input", async (event) => {
+            updateInputs();
+            if (contract) {
+              debouncedUpdatePreview();
+            }
+          });
+        document
+          .getElementById("connectWallet")
+          .addEventListener("click", connectWallet);
+        document
+          .getElementById("expiryDate")
+          .addEventListener("change", updateInputs);
+        document
+          .getElementById("preview")
+          .addEventListener("click", handlePreviewClick);
+        document
+          .getElementById("submitDEAL")
+          .addEventListener("click", submitDEAL);
+        document
+          .getElementById("resetForm")
+          .addEventListener("click", resetForm);
+        document
+          .getElementById("darkModeToggle")
+          .addEventListener("click", toggleDarkMode);
+        document
+          .getElementById("hashDealNotes")
+          .addEventListener("click", hashDealNotes);
+
+
+        setupEventListeners();
+        initializeAndValidateForm();
+
+
+        const inputs = document.querySelectorAll("input");
+        const debouncedUpdatePreview = debounce(updatePreview, 300);
+
+
+        const toggleButton = document.getElementById("toggleNotification");
+        if (toggleButton) {
+          toggleButton.addEventListener("click", toggleNotificationArea);
+        }
+
+
+        inputs.forEach((input) => {
+          if (input.id !== "providerName") {
+            input.addEventListener("focusout", () => {
+              switch (input.id) {
+                case "clientName":
+                  validateClientName(input.value);
+                  break;
+                case "resolverName":
+                  validateResolverName(input.value);
+                  break;
+                case "dealAmount":
+                  validateAmount(input.value, input.id);
+                  break;
+                case "expiryDate":
+                  validateExpiryDate(input.value);
+                  break;
+                case "dealNotes":
+                  validateDealNotes(input.value);
+                  break;
+              }
+              updateInputs();
+              if (contract) {
+                debouncedUpdatePreview();
+              }
+            });
+          }
+
+
+          if (
+            input.id === "clientName" ||
+            input.id === "providerName" ||
+            input.id === "resolverName"
+          ) {
+            input.addEventListener("keydown", (event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                openBasescanLink(input.id);
+              }
+            });
+          }
+        });
+
+
+        if (window.ethereum) {
+          window.ethereum.on("chainChanged", (chainId) => {
+            if (chainId !== BASE_CHAIN_ID) {
+              showNotification("Please switch to the Base network", "warning");
+              const connectWalletBtn = document.getElementById("connectWallet");
+              connectWalletBtn.textContent = "Wrong Network";
+              connectWalletBtn.classList.remove("connected");
+              connectWalletBtn.classList.add("flashing");
+            } else {
+              const connectWalletBtn = document.getElementById("connectWallet");
+              const displayName = dealInputs.providerName.endsWith(".base")
+                ? dealInputs.providerName
+                : shortenAddress(userAddress);
+              connectWalletBtn.innerHTML = `<span id="walletText"><a href="https://basescan.org/address/${userAddress}" target="_blank">${displayName}</a></span>`;
+              connectWalletBtn.classList.add("connected");
+              connectWalletBtn.classList.remove("flashing");
+            }
+          });
+          window.ethereum.on("accountsChanged", () => {
+            window.location.reload();
+          });
+        }
+
+
+        updateBaseLogo();
+        updatePreview(); // Initial preview update.
+      });
+
+
+      document.addEventListener("click", function (event) {
+        const detailsWindow = document.getElementById("dealDetailsWindow");
+        const dropdown = document.getElementById("hashIdDropdown");
+
+
+        if (
+          !detailsWindow.contains(event.target) &&
+          event.target !== dropdown
+        ) {
+          detailsWindow.style.opacity = 0;
+          setTimeout(() => {
+            detailsWindow.style.display = "none";
+            detailsWindow.style.transition = "";
+          }, 300);
+        }
+      });
+
+
+      const hashDealNotes = () => {
+        const dealNotesInput = document.getElementById("dealNotes");
+        const notes = dealNotesInput.value.trim();
+        if (notes) {
+          const hashedNotes = ethers.utils.keccak256(
+            ethers.utils.toUtf8Bytes(notes)
+          );
+          dealNotesInput.value = hashedNotes;
+          showNotification("Deal notes hashed for privacy", "info");
+        } else {
+          showNotification("Please enter deal notes before hashing", "warning");
+        }
+      };
+    </script>
+    <style>
+      body {
+        font-family: "Arial", sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f0f4f8;
+        color: #333;
+        line-height: 1.6;
+        transition: background-color 0.3s, color 0.3s;
+      }
+      body.dark-mode {
+        background-color: #1a1a1a;
+        color: #f0f0f0;
+      }
+      .container {
+        background-color: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: background-color 0.3s;
+        margin-top: 60px;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      body.dark-mode .container {
+        background-color: #2a2a2a;
+        box-shadow: 0 4px 6px rgba(255, 255, 255, 0.1);
+      }
+      h1 {
+        color: #2c3e50;
+        transition: color 0.3s;
+      }
+      body.dark-mode h1 {
+        color: #ecf0f1;
+      }
+      #baseLogo {
+        width: 40px;
+        height: 40px;
+      }
+      .form-group {
+        margin-bottom: 20px;
+        position: relative;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        color: #34495e;
+        font-weight: bold;
+        transition
+        : color 0.3s;
+      }
+      body.dark-mode label {
+        color: #bdc3c7;
+      }
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #bdc3c7;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-size: 16px;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease,
+          background-color 0.3s, color 0.3s;
+      }
+      body.dark-mode input[type="text"],
+      body.dark-mode input[type="number"] {
+        background-color: #3a3a3a;
+        color: #f0f0f0;
+        border-color: #555;
+      }
+      input[type="text"]:focus,
+      input[type="number"]:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+      }
+      input.valid {
+        border-color: #2ecc71;
+        background-color: #f0fff0;
+      }
+      input.invalid {
+        border-color: #e74c3c;
+        background-color: #fff0f0;
+      }
+      body.dark-mode input.valid {
+        background-color: #1a3a1a;
+      }
+      body.dark-mode input.invalid {
+        background-color: #3a1a1a;
+      }
+      button {
+        background-color: #000;
+        color: #fff;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s ease, transform 0.1s ease,
+          opacity 0.3s ease;
+      }
+      body.dark-mode button {
+        background-color: #fff;
+        color: #000;
+      }
+      button:hover {
+        opacity: 0.8;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      button:disabled {
+        background-color: #bdc3c7;
+        cursor: not-allowed;
+      }
+      #connectWallet {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 10px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        z-index: 1000;
+      }
+      #connectWallet.flashing {
+        animation: flash 1s infinite alternate;
+      }
+      #expiryDate.immediate {
+        background-color: #ffe6e6;
+        border-color: #14d431;
+      }
+      #expiryDate.escrow {
+        background-color: #e6ffe6;
+        border-color: #99ff99;
+      }
+      body.dark-mode #expiryDate.immediate {
+        background-color: #4d0000;
+        border-color: #14d431;
+      }
+      body.dark-mode #expiryDate.escrow {
+        background-color: #313eb5;
+        border-color: #530080;
+      }
+      @keyframes flash {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0.5;
+        }
+      }
+      #preview {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid #bdc3c7;
+        border-radius: 4px;
+        display: none;
+        background-color: white;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        transition: box-shadow 0.3s ease;
+        margin-top: 20px;
+        cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="%23000000" d="M22 19h-6v-4h-2.68c-1.14 2.42-3.6 4-6.32 4-3.86 0-7-3.14-7-7s3.14-7 7-7c2.72 0 5.17 1.58 6.32 4H24v6h-2v4zm-4-2h2v-4h2v-2H11.94l-.23-.67C11.01 8.34 9.11 7 7 7c-2.76 0-5 2.24-5 5s2.24 5 5 5c2.11 0 4.01-1.34 4.71-3.33l.23-.67H18v4zM7 15c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3zm0-4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>')" 10 10, auto;
+      }
+      #preview:hover {
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+      }
+      body.dark-mode #preview {
+        border-color: #555;
+        background-color: #3a3a3a;
+        cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="%23FFFFFF" d="M22 19h-6v-4h-2.68c-1.14 2.42-3.6 4-6.32 4-3.86 0-7-3.14-7-7s3.14-7 7-7c2.72 0 5.17 1.58 6.32 4H24v6h-2v4zm-4-2h2v-4h2v-2H11.94l-.23-.67C11.01 8.34 9.11 7 7 7c-2.76 0-5 2.24-5 5s2.24 5 5 5c2.11 0 4.01-1.34 4.71-3.33l.23-.67H18v4zM7 15c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3zm0-4c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>')" 10 10, auto;
+      }
+      #predictedHashId,
+      #signableMessage {
+        margin-top: 10px;
+        color: #777;
+        display: none;
+        word-wrap: break-word;
+        font-size: 12px;
+      }
+      body.dark-mode #predictedHashId,
+      body.dark-mode #signableMessage {
+        color: #aaa;
+      }
+      #notificationArea {
+        position: fixed;
+        top: 60px;
+        right: 20px;
+        z-index: 1000;
+      }
+      #notificationCounter {
+        color: #000;
+      }
+      body.dark-mode #notificationCounter {
+        color: #fff;
+      }
+      #toggleNotification {
+        background-color: transparent;
+        color: #000;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      body.dark-mode #toggleNotification i {
+        color: #fff;
+      }
+      #notificationContent {
+        background-color: white;
+        border: 1px solid #ccc;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 5px;
+      }
+      body.dark-mode #notificationContent {
+        background-color: #333;
+        border-color: #555;
+      }
+      #hashIdDropdown {
+        width: 100%;
+      }
+      input.gold {
+        border-color: #ffd700;
+        background-color: #fffacd;
+      }
+      body.dark-mode input.gold {
+        background-color: #3a3a1a;
+        border-color: #ffd700;
+      }
+      #dealDetailsWindow {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: white;
+        border: 1px solid #ccc;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+        max-width: 400px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        display: none;
+      }
+      body.dark-mode #dealDetailsWindow {
+        background-color: #333;
+        border-color: #555;
+        color: #f0f0f0;
+      }
+      #dealDetailsWindow h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 10px;
+      }
+      #dealDetailsWindow p {
+        margin: 10px 0;
+        line-height: 1.4;
+      }
+      #dealDetailsWindow p > strong {
+        display: inline-block;
+        width: 100px;
+      }
+      #dealDetailsWindow #signDEAL {
+        display: inline-block;
+        margin-top: 15px;
+        padding: 8px 15px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+      #dealDetailsWindow #signDEAL:hover {
+        background-color: #2980b9;
+      }
+      body.dark-mode #dealDetailsWindow #signDEAL {
+        color: #fff;
+      }
+      #closeDetailsWindow {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: #777;
+      }
+      body.dark-mode #closeDetailsWindow {
+        color: #aaa;
+      }
+      .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 10px 20px;
+        border-radius: 4px;
+        color: white;
+        font-weight: bold;
+        display: none;
+        z-index: 1000;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+      .notification.success {
+        background-color: #2ecc71;
+      }
+      .notification.error {
+        background-color: #e74c3c;
+      }
+      .notification.warning {
+        background-color: #f39c12;
+      }
+      .notification.info {
+        background-color: #3498db;
+      }
+      .tooltip {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        background-color: #333;
+        color: #fff;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+        width: 200px;
+        z-index: 1;
+      }
+      .form-group:hover .tooltip {
+        opacity: 1;
+      }
+      #loader {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+      }
+      .spinner {
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.4);
+      }
+      .modal-content {
+        background-color: #fefefe;
+        margin: 15% auto;
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%;
+        max-width: 500px;
+        border-radius: 8px;
+        text-align: center;
+      }
+      .modal h2 {
+        margin: 20px 0;
+      }
+      body.dark-mode .modal-content {
+        background-color: #2a2a2a;
+        color: #f0f0f0;
+      }
+      .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+      }
+      .close:hover,
+      .close:focus {
+        color: #000;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      body.dark-mode .close:hover,
+      body.dark-mode .close:focus {
+        color: #fff;
+      }
+      #darkModeToggle {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1001;
+        background: none;
+        border: none;
+        font-size: 24px;
+        color: #333;
+        cursor: pointer;
+        transition: color 0.3s;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+      }
+      body.dark-mode #darkModeToggle {
+        color: #f0f0f0;
+      }
+      #resetForm,
+      #submitDEAL {
+        background: none;
+        border: none;
+        font-size: 24px;
+        color: #bdc3c7;
+        cursor: pointer;
+        transition: color 0.3s, opacity 0.3s;
+        padding: 0;
+        margin-left: 10px;
+        display: none;
+      }
+      #resetForm:hover,
+      #submitDEAL:hover {
+        opacity: 0.8;
+      }
+      body.dark-mode #resetForm,
+      body.dark-mode #submitDEAL {
+        color: #7f8c8d;
+      }
+      body.dark-mode #resetForm:hover,
+      body.dark-mode #submitDEAL:hover {
+        color: #bdc3c7;
+      }
+      .description {
+        font-style: italic;
+        font-size: 14px;
+        margin-bottom: 20px;
+        line-height: 1.4;
+      }
+      #lextek {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        font-size: 24px;
+        font-family: "Brush Script MT", cursive;
+        color: #000;
+        text-decoration: none;
+        z-index: 1001;
+      }
+      body.dark-mode #lextek {
+        color: #fff;
+      }
+      .button-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 20px;
+      }
+      #confirmSubmit,
+      #cancelSubmit {
+        font-size: 36px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.3s;
+        margin: 0 20px;
+        opacity: 0.7;
+      }
+      #confirmSubmit:hover,
+      #cancelSubmit:hover {
+        opacity: 1;
+      }
+      .input-group {
+        display: flex;
+        align-items: center;
+      }
+      #hashDealNotes {
+        background: none;
+        border: none;
+        font-size: 20px;
+        color: #bdc3c7;
+        cursor: pointer;
+        transition: color 0.3s;
+        padding: 0 10px;
+        margin-left: 5px;
+      }
+      #hashDealNotes:hover {
+        color: #3498db;
+      }
+
+
+      body.dark-mode #hashDealNotes {
+        color: #7f8c8d;
+      }
+
+
+      body.dark-mode #hashDealNotes:hover {
+        color: #3498db;
+      }
+      #docsLink {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        font-size: 24px;
+        color: #bdc3c7;
+        text-decoration: none;
+        transition: color 0.3s;
+        z-index: 1001;
+      }
+      #docsLink:hover {
+        color: #3498db;
+      }
+      body.dark-mode #docsLink {
+        color: #7f8c8d;
+      }
+      body.dark-mode #docsLink:hover {
+        color: #3498db;
+      }
+      #signatureContainer {
+        margin-top: 20px;
+        text-align: center;
+      }
+      #downloadSignature {
+        display: inline-flex;
+        align-items: center;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        color: #000;
+        text-decoration: none;
+        transition: color 0.3s;
+      }
+      #downloadSignature:hover {
+        background-color: #2980b9;
+      }
+      body.dark-mode #downloadSignature {
+        color: #fff;
+      }
+      #downloadSignature i {
+        margin-right: 5px;
+      }
+      body.dark-mode #downloadSignature:hover {
+        background-color: #3498db;
+      }
+      #signatureValidation {
+        margin-left: 10px;
+        font-size: 24px;
+      }
+      @media (max-width: 600px) {
+        body {
+          padding: 10px;
+        }
+        .container {
+          padding: 15px;
+        }
+        #connectWallet,
+        #darkModeToggle,
+        #lextek,
+        #docsLink {
+          position: static;
+          margin-bottom: 10px;
+        }
+        #docsLink {
+          display: block;
+          text-align: center;
+          margin-top: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a id="lextek" href="https://lextek.eth.limo/" target="_blank">𝓁ex𝓉eʞK</a>
+    <button id="darkModeToggle"><i class="fas fa-moon"></i></button>
+    <button id="connectWallet" class="flashing">
+      <span id="walletText">Connect Wallet</span>
+    </button>
+    <div id="notificationArea" style="display: none">
+      <button id="toggleNotification" style="display: none">
+        <i class="fas fa-bell"></i><span id="notificationCounter"></span>
+      </button>
+      <div id="notificationContent" style="display: none">
+        <select id="hashIdDropdown">
+          <option value="">Select a DEAL</option>
+        </select>
+      </div>
+    </div>
+    <div id="dealDetailsWindow" style="display: none"></div>
+    <div class="container">
+      <div class="header">
+        <h1>Base DEAL</h1>
+        <img
+          id="baseLogo"
+          src="https://raw.githubusercontent.com/base-org/brand-kit/main/logo/symbol/Base_Symbol_Black.svg"
+          alt="Base Logo"
+        />
+      </div>
+
+
+      <p class="description">
+        The Base DEAL (Digital Escrow Agreement for Labor) is a simple form for
+        service providers to generate a client invoice or escrow rendered 100%
+        onchain as a dynamic SVG. It natively supports ENS addresses and USDC
+        payments. Sign, send, and fund with USDC as an
+        <a
+          href="https://ethereum.org/en/developers/docs/standards/tokens/erc-1155/"
+          target="_blank"
+          >NFT</a
+        >. Stored immutably on the
+        <a href="https://www.base.org/" target="_blank">Base L2</a> at
+        <a
+          href="https://basescan.org/address/0xde48c8005c008509000000d5c6f31bc3a66e1900#code"
+          target="_blank"
+        >
+          0xde48c8005c008509000000d5c6f31bc3a66e1900 </a
+        >. Since we support basenames,
+        <a href="https://www.base.org/names" target="_blank">reserve yours</a>.
+        <a href="https://lextek.gitbook.io/lextek/ex-e-k/deal" target="_blank"
+          >Docs.</a
+        >
+      </p>
+
+
+      <div class="form-group">
+        <label for="providerName">Provider Name:</label>
+        <input
+          type="text"
+          id="providerName"
+          required
+          aria-required="true"
+          placeholder="provider.base.eth"
+          readonly
+        />
+        <div class="tooltip">
+          The provider's public key address (0x) or Base ENS domain. This is
+          connected from your wallet.
+        </div>
+      </div>
+
+
+      <div class="form-group">
+        <label for="clientName">Client Name:</label>
+        <input
+          type="text"
+          id="clientName"
+          required
+          aria-required="true"
+          placeholder="client.base.eth"
+        />
+        <div class="tooltip">
+          Enter the client's public key address (0x) or Base ENS domain. This
+          user will receive NFT to sign and will pay as invoice or escrow as
+          pending payment depending on Expiry Date (below).
+        </div>
+      </div>
+
+
+      <div class="form-group">
+        <label for="resolverName">Resolver Name:</label>
+        <input
+          type="text"
+          id="resolverName"
+          required
+          aria-required="true"
+          placeholder="curia.base.eth"
+          value="curia.base.eth"
+        />
+        <div class="tooltip">
+          Enter the resolver's public key address (0x) or Base ENS domain. This
+          user can split or return escrowed funds in case of a lock for dispute
+          or recovery. It will show as 'gold' if the user is registered by
+          Curia.
+        </div>
+      </div>
+
+
+      <div class="form-group">
+        <label for="dealAmount">Payment Amount (USDC):</label>
+        <input
+          type="number"
+          id="dealAmount"
+          required
+          aria-required="true"
+          placeholder="100"
+          min="0"
+          step="1"
+        />
+        <div class="tooltip">
+          Enter the deal amount in USDC (6 decimal places).
+        </div>
+      </div>
+
+
+      <div class="form-group">
+        <label for="dealNotes">Service Notes:</label>
+        <div class="input-group">
+          <input
+            type="text"
+            id="dealNotes"
+            required
+            aria-required="true"
+            placeholder="Website Design"
+          />
+          <button id="hashDealNotes" title="Hash Deal Notes">
+            <i class="fas fa-lock"></i>
+          </button>
+        </div>
+        <div class="tooltip">
+          Enter any additional notes or terms for the deal. Click the lock icon
+          to hash for privacy.
+        </div>
+      </div>
+
+
+      <div class="form-group">
+        <label for="expiryDate">Expiry Date:</label>
+        <input type="date" id="expiryDate" required aria-required="true" />
+        <div class="tooltip">
+          Select the expiry date for the deal. This is deadline by which a
+          client can reclaim funds from escrow if work incomplete and no
+          dispute. If work is complete, select today or previous.
+        </div>
+      </div>
+
+
+      <div class="button-container">
+        <button id="resetForm" title="Reset details">
+          <i class="fas fa-recycle"></i>
+        </button>
+        <button id="submitDEAL" title="Submit DEAL">
+          <i class="fas fa-paper-plane"></i>
+        </button>
+      </div>
+
+
+      <img id="preview" alt="DEAL Preview" />
+      <div id="predictedHashId"></div>
+      <div id="signableMessage"></div>
+      <div id="signatureContainer" style="display: none">
+        <a id="downloadSignature" href="#" download="signature.txt">
+          <i class="fas fa-download"></i> Download Signature
+        </a>
+        <span id="signatureValidation"></span>
+      </div>
+
+
+      <div id="notification" class="notification"></div>
+      <div id="loader">
+        <div class="spinner"></div>
+      </div>
+      <div id="confirmationModal" class="modal">
+        <div class="modal-content">
+          <h2>Confirm Submission</h2>
+          <p>Are you sure you want to submit this DEAL?</p>
+          <div class="button-container">
+            <button id="confirmSubmit">👍</button>
+            <button id="cancelSubmit">👎</button>
+          </div>
+        </div>
+      </div>
+      <a
+        href="https://lextek.gitbook.io/lextek/ex-e-k/deal"
+        target="_blank"
+        id="docsLink"
+        title="Documentation"
+      >
+        <i class="fas fa-file-alt"></i>
+      </a>
+    </div>
+  </body>
+</html>
