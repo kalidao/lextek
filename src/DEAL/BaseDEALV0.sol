@@ -38,10 +38,10 @@ interface IIE {
     function whatIsTheAddressOf(string memory) external view returns (address, address, bytes32);
 }
 
-IIE constant IE = IIE(0x1e00cE4800dE0D0000640070006dfc5F93dD0ff9);
+IIE constant IE = IIE(0x1eB800E42c879193A1D3d940000000c300e80041);
 address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 address constant WETH = 0x4200000000000000000000000000000000000006;
-IEscrows constant ESCROWS = IEscrows(0x000000000000275b61D4CE184F15B495014B1098);
+IEscrows constant ESCROWS = IEscrows(0x00000000000044992CB97CB1A57A32e271C04c11);
 
 contract BaseDEALV0 is ERC1155 {
     mapping(uint256 dealHashId => DEAL) public deals;
@@ -184,7 +184,9 @@ contract BaseDEALV0 is ERC1155 {
     error Unregistered();
     error Unauthorized();
 
-    function sign(uint256 dealHashId) public payable checkVal {
+    mapping(uint256 dealHashId => bytes32) public escrowHashes;
+
+    function sign(uint256 dealHashId) public payable returns (bytes32 escrowHash) {
         DEAL storage deal = deals[dealHashId];
 
         if (deal.providerSignature == address(0)) revert Unregistered();
@@ -205,15 +207,30 @@ contract BaseDEALV0 is ERC1155 {
         string memory shortName;
         if (ens) shortName = _extractName(bytes(deal.providerName));
 
-        (, address providerAddress,) = IE.whatIsTheAddressOf(ens ? shortName : deal.providerName);
+        (, address provider,) = IE.whatIsTheAddressOf(ens ? shortName : deal.providerName);
 
-        _mint(providerAddress, dealHashId, 1, "");
+        _mint(provider, dealHashId, 1, "");
 
         bool invoiceDue = deal.expiryTimestamp <= block.timestamp;
 
         uint256 dealAmount = _toUint(bytes(deal.dealAmount));
 
-        SafeTransferLib.safeTransferFrom(USDC, msg.sender, address(this), dealAmount);
+        if (msg.value != 0) {
+            SafeTransferLib.safeTransferETH(WETH, msg.value); // Wrap.
+            IE.command(string(abi.encodePacked("swap", " weth ", "to ", deal.dealAmount, " usdc")));
+
+            uint256 sum;
+            if ((sum = SafeTransferLib.balanceOf(WETH, address(this))) != 0) {
+                assembly ("memory-safe") {
+                    mstore(0x00, 0x2e1a7d4d) // `withdraw(uint256)`.
+                    mstore(0x20, sum) // Store the `sum` argument.
+                    pop(call(gas(), WETH, 0, 0x1c, 0x24, codesize(), 0x00))
+                }
+                SafeTransferLib.safeTransferETH(msg.sender, sum);
+            }
+        } else {
+            SafeTransferLib.safeTransferFrom(USDC, msg.sender, address(this), dealAmount);
+        }
 
         if (invoiceDue) {
             IE.command(
@@ -229,20 +246,32 @@ contract BaseDEALV0 is ERC1155 {
                 )
             );
         } else {
-            (, address client,) = IE.whatIsTheAddressOf(_extractName(bytes(deal.clientName)));
-            (, address provider,) = IE.whatIsTheAddressOf(_extractName(bytes(deal.providerName)));
-            (, address resolver,) = IE.whatIsTheAddressOf(_extractName(bytes(deal.resolverName)));
-            bytes32 id = ESCROWS.escrow(
-                USDC, client, provider, resolver, dealAmount, deal.dealNotes, deal.expiryTimestamp
-            );
-            assembly ("memory-safe") {
-                mstore(0x00, id)
-                return(0x00, 0x20)
+            address resolver;
+            if (bytes(deal.resolverName).length == 42) {
+                resolver = _toAddress(bytes(deal.resolverName));
+            } else {
+                (, resolver,) = IE.whatIsTheAddressOf(_extractName(bytes(deal.resolverName)));
             }
+            escrowHash = ESCROWS.escrow(
+                USDC,
+                msg.sender,
+                provider,
+                resolver,
+                dealAmount,
+                deal.dealNotes,
+                deal.expiryTimestamp
+            );
+            escrowHashes[dealHashId] = escrowHash;
         }
 
         if ( /*recycle*/ (dealHashId = SafeTransferLib.balanceOf(USDC, address(this))) != 0) {
             SafeTransferLib.safeTransfer(USDC, msg.sender, dealHashId);
+        }
+    }
+
+    receive() external payable {
+        assembly ("memory-safe") {
+            if iszero(eq(caller(), WETH)) { revert(codesize(), codesize()) }
         }
     }
 
@@ -493,8 +522,127 @@ contract BaseDEALV0 is ERC1155 {
 
         uint256 sum;
         if ((sum = SafeTransferLib.balanceOf(WETH, address(this))) != 0) {
-            SafeTransferLib.safeTransfer(WETH, msg.sender, sum);
+            assembly ("memory-safe") {
+                mstore(0x00, 0x2e1a7d4d) // `withdraw(uint256)`.
+                mstore(0x20, sum) // Store the `sum` argument.
+                pop(call(gas(), WETH, 0, 0x1c, 0x24, codesize(), 0x00))
+            }
+            SafeTransferLib.safeTransferETH(msg.sender, sum);
         }
         emit Log(msg.sender, log);
+    }
+
+    function fundDeal(DEAL memory deal) public payable returns (bytes32 escrowHash) {
+        string memory baseName = IE.whatIsTheNameOf(msg.sender);
+        if (bytes(baseName).length != 0) deal.clientName = baseName;
+        else deal.clientName = LibString.toHexStringChecksummed(msg.sender);
+
+        if (deal.providerSignature != address(0)) delete deal.providerSignature;
+        deal.clientSignature = msg.sender;
+        uint256 dealHashId = uint256(keccak256(abi.encode(deal)));
+
+        bool ens = bytes(deal.providerName).length != 42;
+        string memory shortName;
+        if (ens) shortName = _extractName(bytes(deal.providerName));
+
+        (, address provider,) = IE.whatIsTheAddressOf(ens ? shortName : deal.providerName);
+
+        _mint(provider, dealHashId, 1, "");
+        _mint(msg.sender, dealHashId, 1, "");
+
+        bool invoiceDue = deal.expiryTimestamp <= block.timestamp;
+
+        uint256 dealAmount = _toUint(bytes(deal.dealAmount));
+
+        if (msg.value != 0) {
+            SafeTransferLib.safeTransferETH(WETH, msg.value); // Wrap.
+            IE.command(string(abi.encodePacked("swap", " weth ", "to ", deal.dealAmount, " usdc")));
+
+            uint256 sum;
+            if ((sum = SafeTransferLib.balanceOf(WETH, address(this))) != 0) {
+                assembly ("memory-safe") {
+                    mstore(0x00, 0x2e1a7d4d) // `withdraw(uint256)`.
+                    mstore(0x20, sum) // Store the `sum` argument.
+                    pop(call(gas(), WETH, 0, 0x1c, 0x24, codesize(), 0x00))
+                }
+                SafeTransferLib.safeTransferETH(msg.sender, sum);
+            }
+        } else {
+            SafeTransferLib.safeTransferFrom(USDC, msg.sender, address(this), dealAmount);
+        }
+
+        if (invoiceDue) {
+            IE.command(
+                string(
+                    abi.encodePacked(
+                        "send ",
+                        ens ? shortName : deal.providerName,
+                        " ",
+                        deal.dealAmount,
+                        " ",
+                        "usdc"
+                    )
+                )
+            );
+        } else {
+            address resolver;
+            if (bytes(deal.resolverName).length == 42) {
+                resolver = _toAddress(bytes(deal.resolverName));
+            } else {
+                (, resolver,) = IE.whatIsTheAddressOf(_extractName(bytes(deal.resolverName)));
+            }
+            escrowHash = ESCROWS.escrow(
+                USDC,
+                msg.sender,
+                provider,
+                resolver,
+                dealAmount,
+                deal.dealNotes,
+                deal.expiryTimestamp
+            );
+            escrowHashes[dealHashId] = escrowHash;
+            _ids[resolver].push(dealHashId);
+        }
+
+        if (bytes(deals[dealHashId].clientName).length != 0) revert Registered();
+
+        deals[dealHashId] = DEAL({
+            providerName: deal.providerName,
+            clientName: deal.clientName,
+            resolverName: deal.resolverName,
+            dealAmount: deal.dealAmount,
+            dealNotes: deal.dealNotes,
+            dealDate: deal.dealDate,
+            expiryDate: deal.expiryDate,
+            expiryTimestamp: deal.expiryTimestamp,
+            providerSignature: address(0),
+            clientSignature: deal.clientSignature
+        });
+
+        _ids[msg.sender].push(dealHashId);
+        _ids[provider].push(dealHashId);
+
+        if ( /*recycle*/ (dealHashId = SafeTransferLib.balanceOf(USDC, address(this))) != 0) {
+            SafeTransferLib.safeTransfer(USDC, msg.sender, dealHashId);
+        }
+    }
+
+    function providerSign(uint256 dealHashId) public payable checkVal {
+        DEAL storage deal = deals[dealHashId];
+
+        if (deal.clientSignature == address(0)) revert Unregistered();
+        if (deal.providerSignature != address(0)) revert Registered();
+
+        if (bytes(deal.providerName).length == 42) {
+            if (msg.sender != _toAddress(bytes(deal.providerName))) revert Unauthorized();
+        } else {
+            (, address providerAddress,) =
+                IE.whatIsTheAddressOf(_extractName(bytes(deal.providerName)));
+            if (msg.sender != providerAddress) {
+                revert Unauthorized();
+            }
+        }
+
+        deal.providerSignature = msg.sender;
     }
 }

@@ -1,4 +1,4 @@
-# [𝓁ex𝓉eʞK](https://github.com/z0r0z/BaseSafe)  [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL-black.svg)](https://opensource.org/license/agpl-v3/) [![solidity](https://img.shields.io/badge/solidity-%5E0.8.26-black)](https://docs.soliditylang.org/en/v0.8.26/) [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-000000.svg)](https://getfoundry.sh/)
+# [𝓁ex𝓉eʞK](https://github.com/z0r0z/BaseSafe)  [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL-black.svg)](https://opensource.org/license/agpl-v3/) [![solidity](https://img.shields.io/badge/solidity-%5E0.8.27-black)](https://docs.soliditylang.org/en/v0.8.27/) [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-000000.svg)](https://getfoundry.sh/)
 
 > [site](https://lextek.eth.limo/)
 
@@ -24,7 +24,7 @@ struct SAFE {
 
 ## DEAL
 
-`DEAL V0`: [`0xde48c8005C008509000000D5c6F31BC3a66E1900`](https://basescan.org/address/0xde48c8005C008509000000D5c6F31BC3a66E1900#code)
+`DEAL V0`: [`0xde001DC6a918070f00e5B3676700050000787800`](https://basescan.org/address/0xde001DC6a918070f00e5B3676700050000787800#code)
 
 ```solidity
 struct DEAL {

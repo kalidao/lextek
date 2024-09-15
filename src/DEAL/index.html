@@ -19,7 +19,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css"
     />
     <script>
-      const contractAddress = "0xde9A11F019007a0000b6Fe646b001F00E8004A12";
+      const contractAddress = "0xde001DC6a918070f00e5B3676700050000787800";
       const contractABI = [
         "function draft(tuple(string,string,string,string,string,string,string,uint256,address,address)) view returns (string)",
         "function send(string,string,string,string,tuple(uint256,uint256,uint256)) payable returns (uint256)",
@@ -39,14 +39,14 @@
       ];
 
 
-      const ieAddress = "0x1e00cE4800dE0D0000640070006dfc5F93dD0ff9";
+      const ieAddress = "0x1eB800E42c879193A1D3d940000000c300e80041";
       const ieABI = [
         "function whatIsTheNameOf(address) view returns (string)",
         "function whatIsTheAddressOf(string) view returns (address, address, bytes32)",
       ];
 
 
-      const escrowsAddress = "0x000000000000275b61D4CE184F15B495014B1098";
+      const escrowsAddress = "0x00000000000044992CB97CB1A57A32e271C04c11";
       const escrowsABI = [
         "function lock(bytes32) public",
         "function unlock(bytes32) public",
@@ -663,7 +663,7 @@
           detailsWindow.innerHTML = `
       <button id="closeDetailsWindow">&times;</button>
       <h3>DEAL Details</h3>
-      <p><strong>ID:</strong> <a href="https://opensea.io/assets/base/0xde9A11F019007a0000b6Fe646b001F00E8004A12/${hashId}"
+      <p><strong>ID:</strong> <a href="https://opensea.io/assets/base/0xde001DC6a918070f00e5B3676700050000787800/${hashId}"
       target="_blank">${hashId}</a></p>
       <p><strong>Client Name:</strong> ${clientName}</p>
       <p><strong>Provider Name:</strong> ${providerName}</p>
@@ -2063,9 +2063,25 @@
 
 
 
+
+
+
+
+
+
+
+
       body.dark-mode #hashDealNotes {
         color: #7f8c8d;
       }
+
+
+
+
+
+
+
+
 
 
 
@@ -2189,10 +2205,10 @@
         >. Stored immutably on the
         <a href="https://www.base.org/" target="_blank">Base L2</a> at
         <a
-          href="https://basescan.org/address/0xde9A11F019007a0000b6Fe646b001F00E8004A12#code"
+          href="https://basescan.org/address/0xde001DC6a918070f00e5B3676700050000787800#code"
           target="_blank"
         >
-          0xde9A11F019007a0000b6Fe646b001F00E8004A12 </a
+          0xde001DC6a918070f00e5B3676700050000787800 </a
         >. Since we support basenames,
         <a href="https://www.base.org/names" target="_blank">reserve yours</a>.
         <a href="https://lextek.gitbook.io/lextek/ex-e-k/deal" target="_blank"
