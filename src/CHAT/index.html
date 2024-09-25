@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>"
+    />
+    <title>𝓁ex𝓉eʞK Chat</title>
+    <style>
+      :root {
+        --bg-color: #1e1e1e;
+        --text-color: #d4d4d4;
+        --accent-color: #4ec9b0;
+        --secondary-color: #c586c0;
+        --tertiary-color: #6a9955;
+        --dark-bg: #252526;
+        --darker-bg: #2d2d2d;
+        --input-bg: #3c3c3c;
+        --error-color: #f44747;
+        --success-color: #6a9955;
+      }
+      body {
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-family: "Consolas", "Courier New", monospace;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+        font-size: 16px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .container {
+        position: relative;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        max-width: 100%;
+        margin: 0 auto;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+      #chat-controls {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 10px;
+      }
+      h1 {
+        font-size: 2.5em;
+        margin-bottom: 20px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        color: var(--accent-color);
+        text-align: center;
+      }
+      h1 .script {
+        font-family: "Arial Unicode MS", "Lucida Sans Unicode", sans-serif;
+      }
+      h1 .flip {
+        display: inline-block;
+        transform: scaleX(-1);
+      }
+      #user-info {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        color: var(--accent-color);
+        font-size: 0.9em;
+      }
+      #user-info a {
+        color: var(--accent-color);
+        text-decoration: none;
+      }
+      #user-info a:hover {
+        text-decoration: underline;
+      }
+      #chat-container {
+        display: flex;
+        flex: 1;
+        gap: 20px;
+        height: calc(100vh - 150px);
+      }
+      #room-list {
+        width: 150px;
+        background-color: var(--dark-bg);
+        padding: 10px;
+        border-radius: 5px;
+        overflow-y: auto;
+      }
+      .room {
+        cursor: pointer;
+        padding: 10px;
+        margin-bottom: 5px;
+        color: var(--accent-color);
+        border-radius: 5px;
+        transition: background-color 0.3s, transform 0.2s;
+      }
+      .room:hover,
+      .room.active {
+        background-color: var(--darker-bg);
+        transform: translateY(-2px);
+      }
+      #chat-window {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--dark-bg);
+        border-radius: 5px;
+        padding: 10px;
+      }
+      #messages {
+        flex: 1;
+        overflow-y: auto;
+        margin-bottom: 10px;
+        padding: 10px;
+      }
+      .post {
+        background-color: var(--darker-bg);
+        padding: 15px;
+        margin-bottom: 15px;
+        border-radius: 5px;
+        position: relative;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      .post:hover {
+        transform: translateY(-3px) scale(1.02);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      }
+      .post-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-size: 0.9em;
+      }
+      .post-author {
+        color: var(--secondary-color);
+        font-weight: bold;
+      }
+      .post-author a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .post-author a:hover {
+        text-decoration: underline;
+      }
+      .post-date {
+        color: var(--tertiary-color);
+      }
+      .post-message {
+        margin-bottom: 15px;
+        word-break: break-word;
+      }
+      .post-details {
+        font-size: 0.9em;
+        color: var(--accent-color);
+        cursor: pointer;
+        user-select: none;
+        display: inline-block;
+        transition: color 0.2s;
+      }
+      .post-details:hover {
+        color: var(--secondary-color);
+      }
+      .post-details-content {
+        display: none;
+        margin-top: 10px;
+        padding: 10px;
+        background-color: var(--input-bg);
+        border-radius: 3px;
+        font-size: 0.8em;
+      }
+      .post-details-content.visible {
+        display: block;
+      }
+      .agree-button,
+      .execute-button {
+        position: absolute;
+        bottom: 10px;
+        background: none;
+        border: none;
+        color: var(--accent-color);
+        cursor: pointer;
+        font-size: 1.2em;
+        transition: transform 0.2s, color 0.2s;
+      }
+      .agree-button {
+        right: 10px;
+      }
+      .execute-button {
+        right: 70px;
+      }
+      .agree-button:hover,
+      .execute-button:hover {
+        transform: scale(1.2);
+        color: var(--secondary-color);
+      }
+      .execute-button.hidden {
+        display: none;
+      }
+      #message-input {
+        width: 100%;
+        padding: 10px;
+        background-color: var(--input-bg);
+        color: var(--text-color);
+        border: none;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        resize: none;
+        min-height: 40px;
+        max-height: 100px;
+        overflow-y: auto;
+        box-sizing: border-box;
+      }
+      #post-button {
+        width: 100%;
+        background-color: var(--accent-color);
+        color: var(--bg-color);
+        border: none;
+        padding: 10px;
+        cursor: pointer;
+        border-radius: 5px;
+        transition: background-color 0.3s, transform 0.2s;
+      }
+      #post-button:hover {
+        background-color: var(--secondary-color);
+        transform: translateY(-2px);
+      }
+      #status-message {
+        text-align: center;
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 5px;
+        transition: opacity 0.3s ease;
+      }
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.4);
+        transition: opacity 0.3s ease;
+      }
+      .modal-content {
+        background-color: var(--dark-bg);
+        margin: 15% auto;
+        padding: 20px;
+        border: 1px solid var(--accent-color);
+        width: 80%;
+        max-width: 500px;
+        border-radius: 5px;
+        transition: transform 0.3s ease;
+      }
+      .close {
+        color: var(--text-color);
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      .close:hover {
+        color: var(--accent-color);
+      }
+      .modal input {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        box-sizing: border-box;
+        background-color: var(--input-bg);
+        color: var(--text-color);
+        border: none;
+        border-radius: 5px;
+      }
+      #attach-call {
+        background-color: var(--input-bg);
+        color: var(--text-color);
+        border: none;
+        padding: 5px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: background-color 0.3s ease, transform 0.2s;
+        margin-bottom: 10px;
+      }
+      #attach-call:hover {
+        background-color: var(--accent-color);
+        color: var(--bg-color);
+        transform: translateY(-2px);
+      }
+      .blurred {
+        filter: blur(5px);
+      }
+      .hidden {
+        display: none;
+      }
+      #loading-indicator {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: var(--dark-bg);
+        padding: 20px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        display: none;
+      }
+      .spinner {
+        border: 4px solid var(--input-bg);
+        border-top: 4px solid var(--accent-color);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+      }
+      .escrows-link {
+        color: var(--secondary-color);
+        text-decoration: none;
+      }
+      .escrows-link:hover {
+        text-decoration: underline;
+      }
+      #refresh-button {
+        background-color: var(--dark-bg);
+        color: var(--accent-color);
+        border: 2px solid var(--accent-color);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        outline: none;
+      }
+      #refresh-button:hover {
+        background-color: var(--accent-color);
+        color: var(--bg-color);
+        transform: rotate(180deg);
+      }
+      #refresh-button:active {
+        transform: rotate(180deg) scale(0.95);
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      @media (max-width: 768px) {
+        #chat-container {
+          flex-direction: column;
+        }
+        #chat-controls {
+          justify-content: center;
+        }
+        #room-list {
+          width: 100%;
+          margin-bottom: 10px;
+        }
+        .room {
+          display: inline-block;
+          margin-right: 5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div id="user-info"></div>
+      <h1>
+        <span class="script">𝓁</span>ex<span class="script">𝓉</span>e<span
+          class="flip"
+          >k</span
+        >K Chat
+      </h1>
+      <div id="status-message"></div>
+      <div id="chat-controls">
+        <button id="refresh-button" title="Refresh Posts">↻</button>
+      </div>
+      <div id="chat-container">
+        <div id="room-list">
+          <div class="room active" data-room-id="0">Room 0</div>
+          <div class="room" data-room-id="1">Room 1</div>
+          <div class="room" data-room-id="2">Room 2</div>
+        </div>
+        <div id="chat-window">
+          <div id="messages"></div>
+          <button id="attach-call">Attach Contract Call</button>
+          <textarea
+            id="message-input"
+            placeholder="Type your message..."
+            disabled
+          ></textarea>
+          <button id="post-button" disabled>Post</button>
+        </div>
+      </div>
+    </div>
+
+
+    <div id="contractCallModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Contract Call Details</h2>
+        <input id="target-address" type="text" placeholder="Target Address" />
+        <input id="eth-value" type="text" placeholder="ETH Value" />
+        <input id="call-data" type="text" placeholder="Call Data" />
+        <button id="save-call">Save Contract Call</button>
+      </div>
+    </div>
+
+
+    <div id="loading-indicator">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+
+
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", async () => {
+        const CURIA_ERC1155 = "0x9d0cD028c081E461a52cD88fF056c4eaEFe204Ca";
+        const POSTS = "0x000000000065C053566400B198e72c6C82F8B83B";
+        const NAME_CONTRACT = "0x1e00cE4800dE0D0000640070006dfc5F93dD0ff9";
+        const POST_CALLER = "0x7bb2e05a459E3D8CC4FAB7E20FC40068d88aC992";
+
+
+        const CURIA_ERC1155_ABI = [
+          "function balanceOf(address, uint256) view returns (uint256)",
+          "function totalSupply(uint256) view returns (uint256)",
+        ];
+        const POSTS_ABI = [
+          "function post(address token, uint256 id, string calldata message, tuple(address target, uint256 ethers, bytes callData) calldata call) public returns (uint256 index)",
+          "function getLastPosts(address token, uint256 id, uint256 count) public view returns (tuple(uint96 datedTo, address poster, string message, tuple(address target, uint256 ethers, bytes callData) execution, uint256 agreed)[] memory content)",
+          "function agree(address token, uint256 id, uint256 index) public",
+        ];
+        const NAME_ABI = [
+          "function whatIsTheNameOf(address) view returns (string)",
+          "function setName(address token, string calldata name) public payable",
+        ];
+        const POST_CALLER_ABI = [
+          "function threshold() view returns (uint256)",
+          "function posted(uint256) view returns (bool)",
+          "function postCall(uint256) payable returns (bytes memory)",
+        ];
+
+
+        const EXECUTOR_ADDRESS = "0xDa000000000000d2885F108500803dfBAaB2f2aA";
+        const EXECUTOR_ABI = [
+          "function execute(address target, uint256 value, bytes calldata data) public payable returns (bytes memory)",
+        ];
+
+
+        const BASE_CHAIN_ID = "0x2105";
+        const BASE_CHAIN_DETAILS = {
+          chainId: BASE_CHAIN_ID,
+          chainName: "Base",
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+          rpcUrls: ["https://mainnet.base.org"],
+          blockExplorerUrls: ["https://basescan.org"],
+        };
+
+
+        const ESCROW_ADDRESS = "0x000000000000275b61D4CE184F15B495014B1098";
+        const ESCROW_ABI = [
+          "function resolve(bytes32 hash, uint256 forHolder, uint256 forReceiver) public",
+        ];
+
+
+        const FUNCTION_SIGNATURES = {
+          RESOLVE: "0xb1b19036",
+          SET_NAME: "0x5bc05199",
+          EXECUTE: "0xb61d27f6",
+        };
+
+
+        const CONTRACT_NAMES = {
+          [ESCROW_ADDRESS]: "Escrows",
+          [NAME_CONTRACT]: "Intents Engine",
+          [EXECUTOR_ADDRESS]: "Executor",
+        };
+
+
+        let provider,
+          signer,
+          curiaContract,
+          postsContract,
+          nameContract,
+          postCallerContract;
+        let currentRoom = 0;
+        let contractCall = null;
+        let cachedPosts = {};
+
+
+        const POSTS_PER_PAGE = 10;
+        let currentPage = 0;
+        let isLoadingMore = false;
+
+
+        function debounce(func, wait) {
+          let timeout;
+          return function executedFunction(...args) {
+            const later = () => {
+              clearTimeout(timeout);
+              func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+          };
+        }
+
+
+        const debouncedScroll = debounce(async (e) => {
+          const { scrollTop, scrollHeight, clientHeight } = e.target;
+          if (scrollTop + clientHeight >= scrollHeight - 5 && !isLoadingMore) {
+            isLoadingMore = true;
+            currentPage++;
+            await loadPosts(currentRoom, true, currentPage);
+          }
+        }, 200);
+
+
+        async function initializeApp() {
+          showLoading();
+          if (typeof window.ethereum !== "undefined") {
+            try {
+              await connectWallet();
+              contractCall = loadCachedContractCall();
+            } catch (error) {
+              console.error("Failed to connect wallet:", error);
+              updateStatusMessage(
+                "Please connect your wallet to use the chat.",
+                "error"
+              );
+            } finally {
+              hideLoading();
+            }
+          } else {
+            updateStatusMessage(
+              "MetaMask not detected. Please install MetaMask to use the chat.",
+              "error"
+            );
+            hideLoading();
+          }
+          setupEventListeners();
+          setInterval(updateTimestamps, 60000); // Update every minute.
+        }
+
+
+        async function connectWallet() {
+          try {
+            updateStatusMessage("Connecting to wallet...");
+            await switchToBaseNetwork();
+            await window.ethereum.request({ method: "eth_requestAccounts" });
+            provider = new ethers.providers.Web3Provider(
+              window.ethereum,
+              "any"
+            );
+            signer = provider.getSigner();
+
+
+            const address = await signer.getAddress();
+
+
+            curiaContract = new ethers.Contract(
+              CURIA_ERC1155,
+              CURIA_ERC1155_ABI,
+              signer
+            );
+            postsContract = new ethers.Contract(POSTS, POSTS_ABI, signer);
+            nameContract = new ethers.Contract(NAME_CONTRACT, NAME_ABI, signer);
+            postCallerContract = new ethers.Contract(
+              POST_CALLER,
+              POST_CALLER_ABI,
+              signer
+            );
+
+
+            await updateUserInfo(address);
+            updateStatusMessage("Connected to Base network", "success");
+            await checkRoomAccess(currentRoom);
+            smartPoll();
+          } catch (error) {
+            console.error("Failed to connect wallet:", error);
+            updateStatusMessage(
+              "Failed to connect wallet. Please try again.",
+              "error"
+            );
+            throw error;
+          }
+        }
+
+
+        async function switchToBaseNetwork() {
+          try {
+            await window.ethereum.request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: BASE_CHAIN_ID }],
+            });
+          } catch (switchError) {
+            if (switchError.code === 4902) {
+              try {
+                await window.ethereum.request({
+                  method: "wallet_addEthereumChain",
+                  params: [BASE_CHAIN_DETAILS],
+                });
+              } catch (addError) {
+                throw new Error("Failed to add the Base network to MetaMask");
+              }
+            } else {
+              throw new Error("Failed to switch to the Base network");
+            }
+          }
+        }
+
+
+        async function updateUserInfo(address) {
+          const userInfoElement = document.getElementById("user-info");
+          const name = await getNameOrAddress(address);
+          userInfoElement.innerHTML = `<a href="https://basescan.org/address/${address}" target="_blank">${name}</a>`;
+        }
+
+
+        async function handleAccountsChanged(accounts) {
+          if (accounts.length === 0) {
+            updateStatusMessage("Please connect to MetaMask.", "error");
+            resetConnection();
+          } else if (accounts[0] !== (await signer.getAddress())) {
+            signer = provider.getSigner();
+            curiaContract = new ethers.Contract(
+              CURIA_ERC1155,
+              CURIA_ERC1155_ABI,
+              signer
+            );
+            postsContract = new ethers.Contract(POSTS, POSTS_ABI, signer);
+            nameContract = new ethers.Contract(NAME_CONTRACT, NAME_ABI, signer);
+            postCallerContract = new ethers.Contract(
+              POST_CALLER,
+              POST_CALLER_ABI,
+              signer
+            );
+            await updateUserInfo(accounts[0]);
+            await checkRoomAccess(currentRoom);
+          }
+        }
+
+
+        function resetConnection() {
+          stopPolling();
+          signer = null;
+          curiaContract = null;
+          postsContract = null;
+          nameContract = null;
+          postCallerContract = null;
+          document.getElementById("user-info").innerHTML = "";
+          document.getElementById("message-input").disabled = true;
+          document.getElementById("post-button").disabled = true;
+          document.getElementById("messages").innerHTML = "";
+          cachedPosts = {};
+        }
+
+
+        function formatRelativeTime(timestamp) {
+          const now = Date.now();
+          const diff = now - timestamp;
+          const minute = 60 * 1000;
+          const hour = 60 * minute;
+          const day = 24 * hour;
+
+
+          if (diff < minute) {
+            return "just now";
+          } else if (diff < hour) {
+            const minutes = Math.floor(diff / minute);
+            return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+          } else if (diff < day) {
+            const hours = Math.floor(diff / hour);
+            return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+          } else {
+            const days = Math.floor(diff / day);
+            return `${days} day${days > 1 ? "s" : ""} ago`;
+          }
+        }
+
+
+        function updateStatusMessage(message, type = "info") {
+          const statusElement = document.getElementById("status-message");
+          statusElement.textContent = message;
+          statusElement.className = type;
+          statusElement.style.backgroundColor =
+            type === "error"
+              ? "var(--error-color)"
+              : type === "success"
+              ? "var(--success-color)"
+              : "var(--dark-bg)";
+          statusElement.style.opacity = "1";
+          setTimeout(() => {
+            statusElement.style.opacity = "0";
+          }, 3300);
+        }
+
+
+        async function checkRoomAccess(roomId) {
+          if (!curiaContract) return;
+
+
+          try {
+            showLoading();
+            const address = await signer.getAddress();
+            const balance = await curiaContract.balanceOf(address, roomId);
+            const hasAccess = balance.gt(0);
+            document.getElementById("message-input").disabled = !hasAccess;
+            document.getElementById("post-button").disabled = !hasAccess;
+            await loadPosts(roomId, hasAccess);
+          } catch (error) {
+            console.error("Failed to check room access:", error);
+            updateStatusMessage(
+              "Failed to check room access. Please try again.",
+              "error"
+            );
+          } finally {
+            hideLoading();
+          }
+        }
+
+
+        async function postMessage() {
+          if (!postsContract) {
+            console.error("Posts contract not initialized");
+            updateStatusMessage("Not connected to the contract", "error");
+            return;
+          }
+
+
+          const message = document.getElementById("message-input").value.trim();
+          if (message === "") {
+            updateStatusMessage("Message cannot be empty", "error");
+            return;
+          }
+
+
+          try {
+            showLoading();
+            updateStatusMessage("Preparing to post message...");
+            const call = contractCall
+              ? {
+                  target: contractCall.target,
+                  ethers: contractCall.ethers,
+                  callData: contractCall.callData,
+                }
+              : {
+                  target: ethers.constants.AddressZero,
+                  ethers: 0,
+                  callData: "0x",
+                };
+
+
+            console.log("Posting with call:", call);
+            console.log("Current room:", currentRoom);
+            console.log("Message:", message);
+
+
+            console.log("Estimating gas...");
+            const gasEstimate = await postsContract.estimateGas.post(
+              CURIA_ERC1155,
+              currentRoom,
+              message,
+              call
+            );
+
+
+            const gasLimit = gasEstimate.mul(120).div(100); // 20% buffer.
+
+
+            console.log("Estimated gas:", gasEstimate.toString());
+            console.log("Gas limit:", gasLimit.toString());
+
+
+            console.log("Preparing transaction...");
+            const txRequest = await postsContract.populateTransaction.post(
+              CURIA_ERC1155,
+              currentRoom,
+              message,
+              call,
+              {
+                gasLimit,
+              }
+            );
+
+
+            console.log("Transaction request:", txRequest);
+            console.log("Sending transaction...");
+            const sentTx = await signer.sendTransaction(txRequest);
+            console.log("Transaction sent:", sentTx.hash);
+
+
+            updateStatusMessage(
+              "Transaction sent. Waiting for confirmation..."
+            );
+            const receipt = await sentTx.wait();
+            console.log("Transaction confirmed:", receipt);
+
+
+            document.getElementById("message-input").value = "";
+            updateStatusMessage("Message posted successfully", "success");
+            contractCall = null;
+            localStorage.removeItem("cachedContractCall");
+            await loadPosts(currentRoom, true);
+          } catch (error) {
+            console.error("Failed to post message:", error);
+            updateStatusMessage(
+              `Failed to post message: ${error.message}`,
+              "error"
+            );
+          } finally {
+            hideLoading();
+          }
+        }
+
+
+        let pollTimeout;
+        let pollInterval = 30000; // Start with 30 seconds
+        const MIN_POLL_INTERVAL = 5000; // 5 seconds
+        const MAX_POLL_INTERVAL = 300000; // 5 minutes
+
+
+        function smartPoll() {
+          clearTimeout(pollTimeout);
+          pollTimeout = setTimeout(async () => {
+            try {
+              const newPosts = await checkForNewPosts();
+              if (newPosts.length > 0) {
+                await displayNewPosts(newPosts);
+                pollInterval = Math.max(pollInterval / 2, MIN_POLL_INTERVAL);
+              } else {
+                pollInterval = Math.min(pollInterval * 1.5, MAX_POLL_INTERVAL);
+              }
+            } catch (error) {
+              console.error("Error in smart polling:", error);
+            } finally {
+              smartPoll();
+            }
+          }, pollInterval);
+        }
+
+
+        function stopPolling() {
+          clearTimeout(pollTimeout);
+        }
+
+
+        async function checkForNewPosts() {
+          if (!postsContract) return [];
+
+
+          const cachedPostsForRoom = cachedPosts[currentRoom] || [];
+          const lastKnownPostIndex =
+            cachedPostsForRoom.length > 0 ? cachedPostsForRoom[0].index : -1;
+
+
+          const newPosts = await postsContract.getLastPosts(
+            CURIA_ERC1155,
+            currentRoom,
+            10
+          );
+          return Array.from(newPosts)
+            .filter((post) => post.index > lastKnownPostIndex)
+            .reverse();
+        }
+
+
+        async function displayNewPosts(newPosts) {
+          const fragment = document.createDocumentFragment();
+          for (const post of newPosts) {
+            const posterName = await getNameOrAddress(post.poster);
+            const postElement = createPostElement(post, posterName);
+            fragment.prepend(postElement);
+          }
+          const messagesContainer = document.getElementById("messages");
+          messagesContainer.prepend(fragment);
+        }
+
+
+        function createPostElement(post, posterName) {
+          const postElement = document.createElement("div");
+          postElement.className = "post";
+          postElement.innerHTML = `
+    <div class="post-header">
+      <span class="post-author"><a href="https://basescan.org/address/${
+        post.poster
+      }" target="_blank">${posterName}</a></span>
+      <span class="post-date" data-timestamp="${
+        post.datedTo * 1000
+      }">${formatRelativeTime(post.datedTo * 1000)}</span>
+    </div>
+    <div class="post-message">${escapeHtml(post.message)}</div>
+    <div class="post-details">View Details</div>
+    <div class="post-details-content" data-loaded="false"></div>
+    <button class="agree-button" data-index="${post.index}">👍 ${
+            post.agreed
+          }</button>
+    ${
+      currentRoom === 1
+        ? `<button class="execute-button ${
+            post.isExecutable ? "" : "hidden"
+          }" data-index="${post.index}">➢</button>`
+        : ""
+    }
+  `;
+
+
+          const detailsToggle = postElement.querySelector(".post-details");
+          const detailsContent = postElement.querySelector(
+            ".post-details-content"
+          );
+
+
+          detailsToggle.addEventListener("click", async () => {
+            if (detailsContent.getAttribute("data-loaded") === "false") {
+              detailsContent.setAttribute("data-loaded", "true");
+              detailsContent.textContent = "Loading...";
+              try {
+                const executionDetails = await getExecutionDetails(
+                  post.execution
+                );
+                detailsContent.innerHTML = executionDetails;
+              } catch (error) {
+                console.error("Failed to load execution details:", error);
+                detailsContent;
+                detailsContent.textContent =
+                  "Failed to load details. Please try again.";
+              }
+            }
+            detailsContent.classList.toggle("visible");
+            detailsToggle.textContent = detailsContent.classList.contains(
+              "visible"
+            )
+              ? "Hide Details"
+              : "View Details";
+          });
+
+
+          const agreeButton = postElement.querySelector(".agree-button");
+          agreeButton.addEventListener("click", async (e) => {
+            e.preventDefault();
+            await agreeWithPost(post.index);
+          });
+
+
+          if (currentRoom === 1) {
+            const executeButton = postElement.querySelector(".execute-button");
+            if (executeButton) {
+              executeButton.addEventListener("click", async (e) => {
+                e.preventDefault();
+                await executePost(post.index);
+              });
+            }
+          }
+
+
+          return postElement;
+        }
+
+
+        function updateTimestamps() {
+          const timestamps = document.querySelectorAll(".post-date");
+          timestamps.forEach((span) => {
+            const timestamp = parseInt(span.getAttribute("data-timestamp"));
+            span.textContent = formatRelativeTime(timestamp);
+          });
+        }
+
+
+        function batchPromises(promiseFn, items, batchSize = 20) {
+          return new Promise((resolve, reject) => {
+            let result = [];
+            let count = 0;
+
+
+            function runBatch(start) {
+              let end = Math.min(start + batchSize, items.length);
+              let batch = items.slice(start, end);
+
+
+              Promise.all(batch.map(promiseFn))
+                .then((batchResult) => {
+                  result = result.concat(batchResult);
+                  count += batchResult.length;
+                  if (count < items.length) {
+                    runBatch(end);
+                  } else {
+                    resolve(result);
+                  }
+                })
+                .catch(reject);
+            }
+
+
+            runBatch(0);
+          });
+        }
+
+
+        async function loadPosts(roomId, hasAccess, page = 0) {
+          if (!postsContract) return;
+
+
+          try {
+            showLoading();
+            updateStatusMessage("Loading posts...");
+
+
+            const postsPerPage = POSTS_PER_PAGE;
+            const startIndex = page * postsPerPage;
+
+
+            let posts;
+            if (
+              cachedPosts[roomId] &&
+              cachedPosts[roomId].length > startIndex
+            ) {
+              posts = cachedPosts[roomId].slice(
+                startIndex,
+                startIndex + postsPerPage
+              );
+            } else {
+              const fetchedPosts = await postsContract.getLastPosts(
+                CURIA_ERC1155,
+                roomId,
+                30 // Keep this at 30 as in the original code
+              );
+
+
+              // Reverse the posts and assign correct indices
+              posts = Array.from(fetchedPosts)
+                .reverse()
+                .map((post, idx) => ({
+                  ...post,
+                  index: fetchedPosts.length - 1 - idx,
+                }));
+
+
+              if (!cachedPosts[roomId]) {
+                cachedPosts[roomId] = [];
+              }
+              cachedPosts[roomId] = [...posts];
+
+
+              posts = posts.slice(startIndex, startIndex + postsPerPage);
+            }
+
+
+            if (roomId === 1) {
+              const threshold = await postCallerContract.threshold();
+              const totalSupply = await curiaContract.totalSupply(1);
+
+
+              for (let i = 0; i < posts.length; i++) {
+                const isPosted = await postCallerContract.posted(
+                  posts[i].index
+                );
+                const agreedCount = ethers.BigNumber.from(posts[i].agreed);
+                const calculationResult = totalSupply
+                  .mul(threshold)
+                  .lte(agreedCount.mul(100));
+
+
+                posts[i] = {
+                  ...posts[i],
+                  isExecutable: !isPosted && calculationResult,
+                };
+              }
+            }
+
+
+            await displayPosts(posts, hasAccess, roomId, page === 0);
+            updateStatusMessage("Posts loaded successfully", "success");
+          } catch (error) {
+            console.error("Failed to load posts:", error);
+            updateStatusMessage(
+              "Failed to load posts. Please try again.",
+              "error"
+            );
+          } finally {
+            hideLoading();
+            isLoadingMore = false;
+          }
+        }
+
+
+        async function displayPosts(
+          posts,
+          hasAccess,
+          roomId,
+          clearExisting = true
+        ) {
+          const messagesContainer = document.getElementById("messages");
+          if (clearExisting) {
+            messagesContainer.innerHTML = "";
+          }
+
+
+          const fragment = document.createDocumentFragment();
+
+
+          // Batch get all names first
+          const addresses = posts.map((post) => post.poster);
+          const names = await batchGetNames(addresses);
+
+
+          posts.forEach((post, index) => {
+            const posterName = names[index];
+            const postElement = createPostElement(post, posterName);
+            fragment.appendChild(postElement);
+          });
+
+
+          messagesContainer.appendChild(fragment);
+
+
+          if (clearExisting) {
+            messagesContainer.scrollTop = 0;
+          }
+        }
+
+
+        async function getExecutionDetails(execution) {
+          const {
+            target: targetAddress,
+            ethers: ethValue,
+            callData,
+          } = execution;
+          const formattedEthValue = ethers.utils.formatEther(ethValue);
+
+
+          let details = `
+    <p>Execution Target: <a href="https://basescan.org/address/${targetAddress}" target="_blank" class="${
+            CONTRACT_NAMES[targetAddress] ? "escrows-link" : ""
+          }">${CONTRACT_NAMES[targetAddress] || targetAddress}</a></p>
+  `;
+
+
+          if (!CONTRACT_NAMES[targetAddress]) {
+            details += `<p>Execution Value: ${formattedEthValue} ETH</p>`;
+          }
+
+
+          const functionSignature = callData.slice(0, 10);
+
+
+          switch (functionSignature) {
+            case FUNCTION_SIGNATURES.RESOLVE:
+              if (targetAddress === ESCROW_ADDRESS) {
+                const decodedData = ethers.utils.defaultAbiCoder.decode(
+                  ["bytes32", "uint256", "uint256"],
+                  "0x" + callData.slice(10)
+                );
+                details += `
+                  <p>Function: resolve</p>
+                  <p>Hash: ${decodedData[0]}</p>
+                  <p>For Holder: ${decodedData[1]}</p>
+                  <p>For Receiver: ${decodedData[2]}</p>
+                `;
+              }
+              break;
+
+
+            case FUNCTION_SIGNATURES.SET_NAME:
+              if (targetAddress === NAME_CONTRACT) {
+                const decodedData = decodeFunctionData(
+                  NAME_ABI,
+                  "setName",
+                  callData
+                );
+                if (decodedData) {
+                  details += `
+                    <p>Function: setName</p>
+                    <p>Token: ${decodedData.token}</p>
+                    <p>Name: ${decodedData.name}</p>
+                  `;
+                }
+              }
+              break;
+
+
+            case FUNCTION_SIGNATURES.EXECUTE:
+              if (targetAddress === EXECUTOR_ADDRESS) {
+                const decodedData = decodeFunctionData(
+                  EXECUTOR_ABI,
+                  "execute",
+                  callData
+                );
+                if (decodedData) {
+                  details += `
+                    <p>Function: execute</p>
+                    <p>Target: ${decodedData.target}</p>
+                    <p>Value: ${ethers.utils.formatEther(
+                      decodedData.value
+                    )} ETH</p>
+                  `;
+
+
+                  if (
+                    decodedData.target === NAME_CONTRACT &&
+                    decodedData.data.startsWith(FUNCTION_SIGNATURES.SET_NAME)
+                  ) {
+                    const nestedDecodedData = decodeFunctionData(
+                      NAME_ABI,
+                      "setName",
+                      decodedData.data
+                    );
+                    if (nestedDecodedData) {
+                      details += `
+                        <p>Nested Function: setName</p>
+                        <p>Token: ${nestedDecodedData.token}</p>
+                        <p>Name: ${nestedDecodedData.name}</p>
+                      `;
+                    }
+                  } else {
+                    details += `<p>Nested Execution Data: ${decodedData.data}</p>`;
+                  }
+                }
+              }
+              break;
+
+
+            default:
+              details += `<p>Execution Data: ${callData}</p>`;
+          }
+
+
+          details += `
+            <p class="raw-calldata hidden">Raw Calldata: ${callData}</p>
+            <button class="toggle-raw-data">Show Raw Calldata</button>
+          `;
+
+
+          return details;
+        }
+
+
+        function decodeFunctionData(abi, functionName, callData) {
+          try {
+            const interface = new ethers.utils.Interface(abi);
+            return interface.decodeFunctionData(functionName, callData);
+          } catch (error) {
+            console.error(
+              `Error decoding function data for ${functionName}:`,
+              error
+            );
+            return null;
+          }
+        }
+
+
+        const nameCache = new Map();
+        let pendingNameRequests = new Set();
+
+
+        async function getNameOrAddress(address) {
+          if (nameCache.has(address)) {
+            return nameCache.get(address);
+          }
+
+
+          if (pendingNameRequests.has(address)) {
+            // Wait for the pending request to complete
+            while (pendingNameRequests.has(address)) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+            return nameCache.get(address);
+          }
+
+
+          pendingNameRequests.add(address);
+
+
+          try {
+            const name = await nameContract.whatIsTheNameOf(address);
+            const result =
+              name || `${address.slice(0, 6)}...${address.slice(-4)}`;
+            nameCache.set(address, result);
+            return result;
+          } catch (error) {
+            console.error("Failed to get name:", error);
+            const result = `${address.slice(0, 6)}...${address.slice(-4)}`;
+            nameCache.set(address, result);
+            return result;
+          } finally {
+            pendingNameRequests.delete(address);
+          }
+        }
+
+
+        async function batchGetNames(addresses) {
+          const uncachedAddresses = addresses.filter(
+            (addr) => !nameCache.has(addr)
+          );
+          if (uncachedAddresses.length > 0) {
+            await batchPromises(getNameOrAddress, uncachedAddresses);
+          }
+          return addresses.map((addr) => nameCache.get(addr) || addr);
+        }
+
+
+        async function agreeWithPost(index) {
+          if (!postsContract) return;
+
+
+          try {
+            showLoading();
+            updateStatusMessage("Agreeing with post...");
+            console.log("Agreeing with post index:", index);
+            const tx = await postsContract.agree(
+              CURIA_ERC1155,
+              currentRoom,
+              index
+            );
+            const receipt = await tx.wait();
+            updateStatusMessage("Agreed with post successfully", "success");
+          } catch (error) {
+            console.error("Failed to agree with post:", error);
+            updateStatusMessage(
+              "Failed to agree with post. Please try again.",
+              "error"
+            );
+          } finally {
+            hideLoading();
+          }
+        }
+
+
+        async function executePost(index) {
+          if (!postCallerContract) return;
+
+
+          try {
+            showLoading();
+            updateStatusMessage("Executing post...");
+            const tx = await postCallerContract.postCall(index);
+            await tx.wait();
+
+
+            updatePostExecutability(index, false);
+            updateStatusMessage("Post executed successfully", "success");
+          } catch (error) {
+            console.error("Failed to execute post:", error);
+            updateStatusMessage(
+              "Failed to execute post. Please try again.",
+              "error"
+            );
+          } finally {
+            hideLoading();
+          }
+        }
+
+
+        function escapeHtml(unsafe) {
+          return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        }
+
+
+        function showLoading() {
+          document.getElementById("loading-indicator").style.display = "block";
+        }
+
+
+        function hideLoading() {
+          document.getElementById("loading-indicator").style.display = "none";
+        }
+
+
+        function updatePostExecutability(postIndex, isExecutable) {
+          const post = document
+            .querySelector(`.post [data-index="${postIndex}"]`)
+            .closest(".post");
+          if (post) {
+            const executeButton = post.querySelector(".execute-button");
+            if (executeButton) {
+              executeButton.classList.toggle("hidden", !isExecutable);
+            }
+          }
+        }
+
+
+        function cacheContractCall(target, ethValue, callData) {
+          const cachedCall = {
+            target: target,
+            ethers: ethers.utils.parseEther(ethValue).toString(),
+            callData: ethers.utils.hexlify(
+              callData.startsWith("0x") ? callData : "0x" + callData
+            ),
+          };
+          localStorage.setItem(
+            "cachedContractCall",
+            JSON.stringify(cachedCall)
+          );
+          return cachedCall;
+        }
+
+
+        function loadCachedContractCall() {
+          const cachedCallString = localStorage.getItem("cachedContractCall");
+          if (cachedCallString) {
+            const cachedCall = JSON.parse(cachedCallString);
+            cachedCall.ethers = ethers.BigNumber.from(cachedCall.ethers);
+            return cachedCall;
+          }
+          return null;
+        }
+
+
+        function setupEventListeners() {
+          document
+            .getElementById("post-button")
+            .addEventListener("click", postMessage);
+
+
+          document.querySelectorAll(".room").forEach((room) => {
+            room.addEventListener("click", async () => {
+              if (room.classList.contains("active")) return;
+              document.querySelector(".room.active").classList.remove("active");
+              room.classList.add("active");
+              currentRoom = parseInt(room.dataset.roomId);
+              currentPage = 0;
+              await checkRoomAccess(currentRoom);
+            });
+          });
+
+
+          const messageInput = document.getElementById("message-input");
+          messageInput.addEventListener("keypress", function (event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              postMessage();
+            }
+          });
+          messageInput.addEventListener("input", function () {
+            this.style.height = "auto";
+            this.style.height = this.scrollHeight + "px";
+          });
+
+
+          const modal = document.getElementById("contractCallModal");
+          const attachCallBtn = document.getElementById("attach-call");
+          const closeSpan = modal.querySelector(".close");
+          const saveBtn = document.getElementById("save-call");
+
+
+          attachCallBtn.addEventListener("click", () => {
+            modal.style.display = "block";
+          });
+
+
+          closeSpan.addEventListener("click", () => {
+            modal.style.display = "none";
+          });
+
+
+          window.addEventListener("click", (event) => {
+            if (event.target == modal) {
+              modal.style.display = "none";
+            }
+          });
+
+
+          document.addEventListener("click", (event) => {
+            if (event.target.classList.contains("toggle-raw-data")) {
+              const rawDataElement = event.target.previousElementSibling;
+              rawDataElement.classList.toggle("hidden");
+              event.target.textContent = rawDataElement.classList.contains(
+                "hidden"
+              )
+                ? "Show Raw Calldata"
+                : "Hide Raw Calldata";
+            }
+          });
+
+
+          document
+            .getElementById("refresh-button")
+            .addEventListener("click", async () => {
+              const button = document.getElementById("refresh-button");
+              button.disabled = true;
+              button.style.cursor = "wait";
+
+
+              try {
+                await loadPosts(currentRoom, true, 0);
+                updateStatusMessage("Posts refreshed", "success");
+              } catch (error) {
+                console.error("Error refreshing posts:", error);
+                updateStatusMessage("Failed to refresh posts", "error");
+              } finally {
+                button.disabled = false;
+                button.style.cursor = "pointer";
+              }
+            });
+
+
+          document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+              stopPolling();
+            } else {
+              smartPoll();
+            }
+          });
+
+
+          saveBtn.addEventListener("click", () => {
+            const target = document.getElementById("target-address").value;
+            const ethValue = document.getElementById("eth-value").value;
+            const callData = document.getElementById("call-data").value;
+
+
+            if (target && ethValue && callData) {
+              contractCall = cacheContractCall(target, ethValue, callData);
+              updateStatusMessage(
+                "Contract call attached and cached successfully",
+                "success"
+              );
+              modal.style.display = "none";
+            } else {
+              updateStatusMessage(
+                "Please fill all contract call fields",
+                "error"
+              );
+            }
+          });
+
+
+          if (window.ethereum) {
+            window.ethereum.on("chainChanged", async (chainId) => {
+              if (chainId !== BASE_CHAIN_ID) {
+                updateStatusMessage(
+                  "Please switch to the Base network",
+                  "error"
+                );
+                resetConnection();
+              } else {
+                showLoading();
+                try {
+                  await connectWallet();
+                } catch (error) {
+                  console.error(
+                    "Failed to reconnect after chain change:",
+                    error
+                  );
+                  updateStatusMessage(
+                    "Failed to reconnect. Please refresh the page.",
+                    "error"
+                  );
+                } finally {
+                  hideLoading();
+                }
+              }
+            });
+
+
+            window.ethereum.on("accountsChanged", handleAccountsChanged);
+          }
+
+
+          document
+            .getElementById("messages")
+            .addEventListener("scroll", debouncedScroll);
+        }
+
+
+        initializeApp();
+      });
+    </script>
+  </body>
+</html>
